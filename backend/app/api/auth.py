@@ -76,7 +76,7 @@ def company_admin_login(data: CompanyAdminLogin, db: Session = Depends(get_db)):
     if not company or not verify_password(data.password, company.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     if not company.is_active:
-        raise HTTPException(status_code=403, detail="Company suspended")
+        raise HTTPException(status_code=403, detail="Workspace is awaiting platform approval or has been suspended")
 
     token = create_access_token(subject=f"company-admin:{company.id}")
     return {

@@ -11,7 +11,7 @@ from sqlalchemy import func
 from app.db.database import get_db
 from app.models.company import Company
 from app.models.otp import OTPRequest
-from app.schemas.company import CompanyRequestOTP, CompanyRegister, CompanyResponse
+from app.schemas.company import CompanyRequestOTP, CompanyRegister, CompanyCreate, CompanyResponse
 from app.core.config import settings
 from app.core.security import get_password_hash, hash_otp, validate_password
 from app.core.deps import require_super_admin
@@ -79,7 +79,7 @@ def register_company(data: CompanyRegister, db: Session = Depends(get_db)):
         if not db.query(Company).filter(Company.company_code == code).first():
             break
 
-    # Create Company
+    # Public registrations require platform approval before they can sign in.
     hashed_pwd = get_password_hash(data.password)
     new_company = Company(
         company_name=data.company_name,
@@ -89,22 +89,48 @@ def register_company(data: CompanyRegister, db: Session = Depends(get_db)):
         mobile_number=data.mobile_number,
         password=hashed_pwd,
         company_code=code,
+        is_active=False,
     )
     db.add(new_company)
     db.commit()
     db.refresh(new_company)
 
-    # Generate QR Code for Company Code
-    qr = qrcode.make(code)
-    buffered = BytesIO()
-    qr.save(buffered, format="PNG")
-    qr_base64 = base64.b64encode(buffered.getvalue()).decode("utf-8")
-
     return {
-        "message": "Company registered successfully",
-        "company_code": code,
-        "qr_code_base64": f"data:image/png;base64,{qr_base64}"
+        "message": "Workspace request submitted for platform approval",
+        "status": "pending_approval",
     }
+
+
+@router.post("/admin/create")
+def create_company_as_super_admin(
+    data: CompanyCreate,
+    _: dict = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Create an approved workspace directly from the platform console."""
+    try:
+        validate_password(data.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if db.query(Company).filter(Company.business_email == data.business_email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+    while True:
+        code = generate_company_code()
+        if not db.query(Company).filter(Company.company_code == code).first():
+            break
+    company = Company(
+        company_name=data.company_name,
+        company_type=data.company_type,
+        owner_name=data.owner_name,
+        business_email=data.business_email,
+        mobile_number=data.mobile_number,
+        password=get_password_hash(data.password),
+        company_code=code,
+        is_active=True,
+    )
+    db.add(company)
+    db.commit()
+    return {"message": "Workspace created", "company_code": code}
 
 @router.get("/", response_model=list[CompanyResponse])
 def get_companies(

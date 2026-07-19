@@ -13,6 +13,14 @@ class CompanyRegister(BaseModel):
     password: str
     otp: str
 
+class CompanyCreate(BaseModel):
+    company_name: str
+    company_type: str
+    owner_name: str
+    business_email: EmailStr
+    mobile_number: str
+    password: str
+
 class CompanyResponse(BaseModel):
     id: int
     company_name: str
