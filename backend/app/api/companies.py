@@ -69,20 +69,6 @@ def register_company(data: CompanyRegister, db: Session = Depends(get_db)):
         validate_password(data.password)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    # Validate OTP
-    otp_record = db.query(OTPRequest).filter(
-        OTPRequest.email == data.business_email,
-        OTPRequest.otp == hash_otp(data.business_email, data.otp),
-        OTPRequest.is_used == False,
-        OTPRequest.expires_at > datetime.datetime.now(datetime.timezone.utc)
-    ).order_by(OTPRequest.created_at.desc()).first()
-
-    if not otp_record:
-        raise HTTPException(status_code=400, detail="Invalid or expired OTP")
-
-    # Mark OTP as used
-    otp_record.is_used = True
-    
     # Generate unique company code
     while True:
         code = generate_company_code()
