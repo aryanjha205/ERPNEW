@@ -2,12 +2,18 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.auth import router as auth_router
 from app.api.companies import router as companies_router
+from app.api.employees import router as employees_router
+from app.api.erp import router as erp_router
 
-app = FastAPI(title="AI Voice ERP API")
+app = FastAPI(
+    title="AI Voice ERP API",
+    description="Production-ready Multi-Tenant Voice ERP",
+    version="1.0.0",
+)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # In production, restrict to frontend domain
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -15,7 +21,10 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(companies_router, prefix="/api/companies", tags=["Companies"])
+app.include_router(employees_router, prefix="/api/employees", tags=["Employees"])
+app.include_router(erp_router, prefix="/api/erp", tags=["ERP Modules"])
+
 
 @app.get("/")
 def read_root():
-    return {"message": "Welcome to AI Voice ERP API"}
+    return {"message": "AI Voice ERP API v1.0"}
