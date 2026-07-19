@@ -63,6 +63,16 @@ def request_otp(data: CompanyRequestOTP, request: Request, db: Session = Depends
 
     return {"message": "OTP sent successfully"}
 
+def generate_qr_code_base64(code: str) -> str:
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(code)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="black", back_color="white")
+    buffered = BytesIO()
+    img.save(buffered, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buffered.getvalue()).decode()
+
+
 @router.post("/register")
 def register_company(data: CompanyRegister, db: Session = Depends(get_db)):
     try:
@@ -84,7 +94,6 @@ def register_company(data: CompanyRegister, db: Session = Depends(get_db)):
         if not db.query(Company).filter(Company.company_code == code).first():
             break
 
-    # Public registrations require platform approval before they can sign in.
     hashed_pwd = get_password_hash(data.password)
     new_company = Company(
         company_name=data.company_name,
@@ -94,15 +103,19 @@ def register_company(data: CompanyRegister, db: Session = Depends(get_db)):
         mobile_number=data.mobile_number,
         password=hashed_pwd,
         company_code=code,
-        is_active=False,
+        is_active=True,
     )
     db.add(new_company)
     db.commit()
     db.refresh(new_company)
 
+    qr_code_base64 = generate_qr_code_base64(code)
+
     return {
-        "message": "Workspace request submitted for platform approval",
-        "status": "pending_approval",
+        "message": "Workspace created successfully",
+        "status": "active",
+        "company_code": code,
+        "qr_code_base64": qr_code_base64
     }
 
 
@@ -135,7 +148,13 @@ def create_company_as_super_admin(
     )
     db.add(company)
     db.commit()
-    return {"message": "Workspace created", "company_code": code}
+    
+    qr_code_base64 = generate_qr_code_base64(code)
+    return {
+        "message": "Workspace created",
+        "company_code": code,
+        "qr_code_base64": qr_code_base64
+    }
 
 @router.get("/", response_model=list[CompanyResponse])
 def get_companies(
@@ -177,3 +196,27 @@ def set_company_status(
     db.commit()
     db.refresh(company)
     return company
+
+
+class CompanyPasswordReset(BaseModel):
+    new_password: str
+
+
+@router.post("/{company_id}/reset-password")
+def reset_company_password(
+    company_id: int,
+    data: CompanyPasswordReset,
+    _: dict = Depends(require_super_admin),
+    db: Session = Depends(get_db),
+):
+    """Reset company admin credentials/password. Super Admin only."""
+    try:
+        validate_password(data.new_password)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    company = db.query(Company).filter(Company.id == company_id).first()
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found")
+    company.password = get_password_hash(data.new_password)
+    db.commit()
+    return {"message": "Company password reset successfully"}

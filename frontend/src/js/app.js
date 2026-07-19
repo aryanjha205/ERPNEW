@@ -20,16 +20,22 @@ function getSession() {
     const store = localStorage.getItem('erp_token') ? localStorage : sessionStorage;
     const token = store.getItem('erp_token');
     const role = store.getItem('erp_role');
-    return token && role ? { token, role, companyName: store.getItem('erp_company_name') || 'Workspace' } : null;
+    return token && role ? {
+        token,
+        role,
+        companyName: store.getItem('erp_company_name') || 'Workspace',
+        companyCode: store.getItem('erp_company_code') || ''
+    } : null;
 }
 
 function saveSession(data, remember = true) {
     const store = remember ? localStorage : sessionStorage;
-    localStorage.removeItem('erp_token'); localStorage.removeItem('erp_role'); localStorage.removeItem('erp_company_name');
-    sessionStorage.removeItem('erp_token'); sessionStorage.removeItem('erp_role'); sessionStorage.removeItem('erp_company_name');
+    localStorage.removeItem('erp_token'); localStorage.removeItem('erp_role'); localStorage.removeItem('erp_company_name'); localStorage.removeItem('erp_company_code');
+    sessionStorage.removeItem('erp_token'); sessionStorage.removeItem('erp_role'); sessionStorage.removeItem('erp_company_name'); sessionStorage.removeItem('erp_company_code');
     store.setItem('erp_token', data.access_token);
     store.setItem('erp_role', data.role);
     store.setItem('erp_company_name', data.company_name || 'Nexus ERP');
+    store.setItem('erp_company_code', data.company_code || '');
 }
 
 function escapeHtml(value = '') {
@@ -41,7 +47,7 @@ async function readApiResponse(response) {
     if (contentType.includes('application/json')) return response.json();
     const text = await response.text();
     if (!response.ok) throw new Error('The server could not complete this request. Please try again in a moment.');
-    throw new Error(text || 'The server returned an unexpected response.');
+    return text;
 }
 
 function renderLogin() {
@@ -58,7 +64,9 @@ function renderLogin() {
             <label class="check-row mb-4"><input id="remember-session" type="checkbox" checked><span>Keep me signed in on this device</span></label>
             <button class="btn btn-primary w-100 btn-auth" type="submit"><span>Sign in securely</span><i class="bi bi-arrow-right"></i></button>
           </form>
-          <div class="auth-divider"><span>New to Nexus?</span></div><button type="button" class="btn btn-outline-secondary w-100" onclick="openRegisterModal()"><i class="bi bi-building-add me-2"></i>Create a company workspace</button>
+          <div class="auth-divider"><span>New to Nexus?</span></div>
+          <button type="button" class="btn btn-outline-secondary w-100 mb-2" onclick="openRegisterModal()"><i class="bi bi-building-add me-2"></i>Create a company workspace</button>
+          <button type="button" class="btn btn-outline-info w-100" onclick="openEmployeeRegisterModal()"><i class="bi bi-person-plus me-2"></i>Register as Employee</button>
           <p class="auth-help">Employees should get a company code from their administrator.</p>
         </section></div></div>`;
     const type = document.getElementById('login-type');
@@ -79,8 +87,6 @@ function updateLoginFields() {
     document.getElementById('password-label').textContent = type === 'super_admin' ? 'Secure PIN' : 'Password';
     email.hidden = type === 'super_admin'; code.hidden = type !== 'employee';
     document.getElementById('login-email').required = type !== 'super_admin';
-    // A company code is optional for email/password sign-in, but required by
-    // the alternate company-code employee sign-in endpoint when provided.
     document.getElementById('company-code').required = false;
 }
 
@@ -106,41 +112,514 @@ async function handleLogin(event) {
     finally { button.disabled = false; button.innerHTML = '<span>Sign in securely</span><i class="bi bi-arrow-right"></i>'; }
 }
 
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const target = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', target);
+    localStorage.setItem('erp_theme', target);
+    showToast(`Switched to ${target} mode`, 'success');
+}
+
 function renderWorkspace(session) {
     syncVoiceButton(true);
     if (session.role === 'super_admin') return renderSuperAdminDashboard();
     const root = document.getElementById('app-root');
-    root.innerHTML = `<div class="app-layout"><aside class="sidebar"><div class="sidebar-brand"><span class="sidebar-brand-icon"><i class="bi bi-boxes"></i></span><div><h5>${escapeHtml(session.companyName)}</h5><small>${escapeHtml(session.role.replace('_', ' '))}</small></div></div><div class="sidebar-section"><p class="sidebar-section-title">Workspace</p><nav class="sidebar-nav">${['Dashboard','Customers','Suppliers','Inventory','Sales','Purchases','Invoices','Projects','Tasks','Notifications'].map(name => `<button class="sidebar-link ${name === 'Dashboard' ? 'active' : ''}" data-module="${name.toLowerCase()}"><i class="bi bi-${moduleIcon(name)}"></i>${name}</button>`).join('')}</nav></div><div class="sidebar-footer"><button class="sidebar-link text-danger" onclick="logout()"><i class="bi bi-box-arrow-right"></i>Sign out</button></div></aside><main class="main-content"><button class="btn btn-ghost mobile-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open')"><i class="bi bi-list"></i></button><div id="workspace-content"></div></main></div>`;
-    root.querySelectorAll('[data-module]').forEach(button => button.addEventListener('click', () => { root.querySelectorAll('[data-module]').forEach(item => item.classList.remove('active')); button.classList.add('active'); loadModule(button.dataset.module); }));
+    const modules = [
+        'Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll',
+        'Customers', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices',
+        'Projects', 'Tasks', 'Notifications', 'Settings'
+    ];
+    root.innerHTML = `
+      <div class="app-layout">
+        <aside class="sidebar">
+          <div class="sidebar-brand">
+            <span class="sidebar-brand-icon"><i class="bi bi-boxes"></i></span>
+            <div>
+              <h5>${escapeHtml(session.companyName)}</h5>
+              <small>${escapeHtml(session.role.replace('_', ' '))}</small>
+            </div>
+          </div>
+          <div class="sidebar-section">
+            <p class="sidebar-section-title">Workspace</p>
+            <nav class="sidebar-nav">
+              ${modules.map(name => `<button class="sidebar-link ${name === 'Dashboard' ? 'active' : ''}" data-module="${name.toLowerCase()}"><i class="bi bi-${moduleIcon(name)}"></i>${name}</button>`).join('')}
+            </nav>
+          </div>
+          <div class="sidebar-footer">
+            <button class="sidebar-link" onclick="toggleTheme()"><i class="bi bi-circle-half"></i>Toggle Theme</button>
+            <button class="sidebar-link text-danger" onclick="logout()"><i class="bi bi-box-arrow-right"></i>Sign out</button>
+          </div>
+        </aside>
+        <main class="main-content">
+          <button class="btn btn-ghost mobile-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open')"><i class="bi bi-list"></i></button>
+          <div id="workspace-content"></div>
+        </main>
+      </div>`;
+    root.querySelectorAll('[data-module]').forEach(button => button.addEventListener('click', () => {
+        root.querySelectorAll('[data-module]').forEach(item => item.classList.remove('active'));
+        button.classList.add('active');
+        loadModule(button.dataset.module);
+    }));
+    // Apply initialized theme
+    const savedTheme = localStorage.getItem('erp_theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
     loadModule('dashboard');
 }
 
-function moduleIcon(name) { return ({ Dashboard: 'grid-1x2', Customers: 'people', Suppliers: 'truck', Inventory: 'boxes', Sales: 'graph-up-arrow', Purchases: 'cart', Invoices: 'receipt', Projects: 'kanban', Tasks: 'check2-square', Notifications: 'bell' })[name]; }
+function moduleIcon(name) {
+    return ({
+        Dashboard: 'grid-1x2',
+        Employees: 'people-fill',
+        Departments: 'diagram-3',
+        Attendance: 'calendar-check',
+        Leaves: 'calendar-range',
+        Payroll: 'cash-coin',
+        Customers: 'person-square',
+        Suppliers: 'truck',
+        Inventory: 'boxes',
+        Sales: 'graph-up-arrow',
+        Purchases: 'cart',
+        Invoices: 'receipt',
+        Projects: 'kanban',
+        Tasks: 'check2-square',
+        Notifications: 'bell',
+        Settings: 'gear'
+    })[name];
+}
 
-async function api(path) {
-    const response = await fetch(API + path, { headers: { Authorization: `Bearer ${getSession().token}` } });
+async function api(path, options = {}) {
+    const session = getSession();
+    const headers = { Authorization: `Bearer ${session ? session.token : ''}`, ...options.headers };
+    if (options.body && !(options.body instanceof FormData)) {
+        headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(options.body);
+    }
+    const response = await fetch(API + path, { ...options, headers });
     if (response.status === 401) { logout(); throw new Error('Your session has expired.'); }
-    const data = await readApiResponse(response); if (!response.ok) throw new Error(data.detail || 'Request failed'); return data;
+    const data = await readApiResponse(response);
+    if (!response.ok) throw new Error(data.detail || 'Request failed');
+    return data;
 }
 
 async function loadModule(module) {
-    const target = document.getElementById('workspace-content'); target.innerHTML = '<div class="skeleton skeleton-card"></div>';
+    const target = document.getElementById('workspace-content');
+    target.innerHTML = '<div class="skeleton skeleton-card mb-3"></div><div class="skeleton skeleton-card"></div>';
     try {
-        if (module === 'dashboard') return renderDashboard(await api('/erp/dashboard'));
+        if (module === 'dashboard') {
+            return renderDashboard(await api('/erp/dashboard'));
+        }
+        if (module === 'settings') {
+            return renderSettings(await api('/erp/settings'));
+        }
         const records = await api(`/erp/${module}`);
         renderRecords(module, records);
-    } catch (error) { target.innerHTML = `<div class="alert alert-danger">${escapeHtml(error.message)}</div>`; }
+    } catch (error) {
+        target.innerHTML = `<div class="alert alert-danger">${escapeHtml(error.message)}</div>`;
+    }
 }
 
 function renderDashboard(data) {
-    document.getElementById('workspace-content').innerHTML = `<div class="page-header"><div><h2>Dashboard</h2><p class="text-muted mb-0">A real-time view of your business.</p></div></div><div class="row g-3">${[['Revenue', data.revenue, 'currency-dollar'],['Expenses',data.expenses,'wallet2'],['Profit',data.profit,'graph-up'],['Employees',data.total_employees,'people'],['Customers',data.total_customers,'person-heart'],['Inventory',data.total_inventory,'boxes'],['Pending invoices',data.pending_invoices,'receipt'],['Open tasks',data.pending_tasks,'check2-square']].map(([label,value,icon]) => `<div class="col-sm-6 col-xl-3"><div class="card stat-card h-100"><div class="card-body d-flex justify-content-between"><div><h6>${label}</h6><div class="stat-value">${typeof value === 'number' && ['Revenue','Expenses','Profit'].includes(label) ? value.toLocaleString(undefined,{style:'currency',currency:'USD'}) : value}</div></div><div class="stat-icon bg-primary-subtle text-primary"><i class="bi bi-${icon}"></i></div></div></div></div>`).join('')}</div><div class="card mt-4"><div class="card-body"><h5 class="mb-1">AI assistant is ready</h5><p class="text-muted mb-0">Use the microphone to say “show inventory”, “open customers”, or “show today’s sales”.</p></div></div>`;
+    document.getElementById('workspace-content').innerHTML = `
+        <div class="page-header">
+            <div>
+                <h2>Dashboard</h2>
+                <p class="text-muted mb-0">A real-time view of your business.</p>
+            </div>
+        </div>
+        <div class="row g-3">
+            ${[
+                ['Revenue', data.revenue, 'currency-dollar'],
+                ['Expenses', data.expenses, 'wallet2'],
+                ['Profit', data.profit, 'graph-up'],
+                ['Employees', data.total_employees, 'people'],
+                ['Customers', data.total_customers, 'person-heart'],
+                ['Inventory Items', data.total_inventory, 'boxes'],
+                ['Pending Invoices', data.pending_invoices, 'receipt'],
+                ['Open Tasks', data.pending_tasks, 'check2-square']
+            ].map(([label, value, icon]) => `
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card stat-card h-100">
+                        <div class="card-body d-flex justify-content-between">
+                            <div>
+                                <h6>${label}</h6>
+                                <div class="stat-value">${typeof value === 'number' && ['Revenue', 'Expenses', 'Profit'].includes(label) ? value.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) : value}</div>
+                            </div>
+                            <div class="stat-icon bg-primary-subtle text-primary">
+                                <i class="bi bi-${icon}"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        
+        <div class="row g-3 mt-3">
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h5>Monthly Overview</h5>
+                    <canvas id="overviewChart"></canvas>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h5>Quick Actions</h5>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-primary text-start" onclick="loadModule('customers')"><i class="bi bi-person-plus me-2"></i>Add Customer</button>
+                        <button class="btn btn-outline-primary text-start" onclick="loadModule('inventory')"><i class="bi bi-box-seam me-2"></i>Manage Inventory</button>
+                        <button class="btn btn-outline-secondary text-start" onclick="loadModule('tasks')"><i class="bi bi-check2-square me-2"></i>Assign Tasks</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="mb-1">AI Assistant is active</h5>
+                <p class="text-muted mb-0">Click the floating microphone button to speak commands like: "show inventory", "open crm", "create task finish report", etc.</p>
+            </div>
+        </div>`;
+        
+    // Build Chart.js Graph
+    const ctx = document.getElementById('overviewChart')?.getContext('2d');
+    if (ctx) {
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Revenue', 'Expenses', 'Profit'],
+                datasets: [{
+                    label: 'Financial Performance ($)',
+                    data: [data.revenue, data.expenses, data.profit],
+                    backgroundColor: ['rgba(99, 102, 241, 0.8)', 'rgba(239, 68, 68, 0.8)', 'rgba(16, 185, 129, 0.8)']
+                }]
+            },
+            options: { responsive: true, scales: { y: { beginAtZero: true } } }
+        });
+    }
+}
+
+function renderSettings(data) {
+    const session = getSession();
+    document.getElementById('workspace-content').innerHTML = `
+        <div class="page-header">
+            <div>
+                <h2>Settings</h2>
+                <p class="text-muted mb-0">Manage workspace options.</p>
+            </div>
+        </div>
+        <div class="card p-4">
+            <h5>Workspace Details</h5>
+            <div class="mb-3">
+                <label class="form-label">Company Code</label>
+                <div class="input-group">
+                    <input class="form-control font-mono" value="${escapeHtml(session.companyCode)}" readonly>
+                    <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText('${session.companyCode}'); showToast('Code copied!', 'success');">Copy</button>
+                </div>
+                <div class="form-text">Share this code with employees so they can join.</div>
+            </div>
+            
+            <hr>
+            
+            <h5>Preferences</h5>
+            <form id="settings-form">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="voiceToggle" checked>
+                    <label class="form-check-label" for="voiceToggle">Enable speech synthesis responses</label>
+                </div>
+                <button type="submit" class="btn btn-primary">Save Settings</button>
+            </form>
+        </div>`;
+    document.getElementById('settings-form').addEventListener('submit', event => {
+        event.preventDefault();
+        showToast('Settings saved successfully', 'success');
+    });
 }
 
 function renderRecords(module, records) {
     const title = module[0].toUpperCase() + module.slice(1);
-    const rows = records.map(record => `<tr>${Object.entries(record).filter(([key]) => !['company_id'].includes(key)).slice(0, 6).map(([, value]) => `<td>${escapeHtml(value ?? '—')}</td>`).join('')}</tr>`).join('');
-    const headings = records[0] ? Object.keys(records[0]).filter(key => key !== 'company_id').slice(0, 6) : [];
-    document.getElementById('workspace-content').innerHTML = `<div class="page-header"><div><h2>${title}</h2><p class="text-muted mb-0">Tenant-isolated ${module} data.</p></div></div><div class="card"><div class="table-responsive"><table class="table table-hover mb-0"><thead><tr>${headings.map(key => `<th>${escapeHtml(key.replaceAll('_', ' '))}</th>`).join('')}</tr></thead><tbody>${rows || `<tr><td colspan="${Math.max(headings.length, 1)}" class="text-center text-muted p-5">No ${escapeHtml(module)} yet.</td></tr>`}</tbody></table></div></div>`;
+    const headings = records[0] ? Object.keys(records[0]).filter(key => !['company_id', 'id'].includes(key)).slice(0, 6) : [];
+    
+    const rows = records.map(record => `
+        <tr>
+            ${Object.entries(record).filter(([key]) => !['company_id', 'id'].includes(key)).slice(0, 6).map(([, value]) => `<td>${escapeHtml(value ?? '—')}</td>`).join('')}
+        </tr>`).join('');
+
+    document.getElementById('workspace-content').innerHTML = `
+        <div class="page-header">
+            <div>
+                <h2>${title}</h2>
+                <p class="text-muted mb-0">Manage and create company ${module}.</p>
+            </div>
+            ${module !== 'notifications' ? `<button class="btn btn-primary" onclick="showAddForm('${module}')"><i class="bi bi-plus-lg me-1"></i>Add ${title.slice(0, -1) || title}</button>` : ''}
+        </div>
+        
+        <div id="add-form-container" class="card mb-4 p-4 d-none">
+            <!-- Dynamic form inserts here -->
+        </div>
+        
+        <div class="card">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            ${headings.map(key => `<th>${escapeHtml(key.replaceAll('_', ' '))}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${rows || `<tr><td colspan="${Math.max(headings.length, 1)}" class="text-center text-muted p-5">No ${escapeHtml(module)} yet.</td></tr>`}
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+}
+
+function showAddForm(module) {
+    const container = document.getElementById('add-form-container');
+    container.classList.remove('d-none');
+    
+    let fieldsHtml = '';
+    if (module === 'customers' || module === 'suppliers') {
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Name</label><input id="form-name" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Email</label><input id="form-email" type="email" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label">Phone</label><input id="form-phone" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label">Address</label><input id="form-address" class="form-control"></div>
+            </div>`;
+    } else if (module === 'inventory') {
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Item Name</label><input id="form-name" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">SKU</label><input id="form-sku" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label">Category</label><input id="form-category" class="form-control"></div>
+                <div class="col-md-4"><label class="form-label">Quantity</label><input id="form-quantity" type="number" class="form-control" value="0"></div>
+                <div class="col-md-4"><label class="form-label">Unit Price ($)</label><input id="form-price" type="number" step="0.01" class="form-control" value="0.00"></div>
+                <div class="col-md-4"><label class="form-label">Warehouse</label><input id="form-warehouse" class="form-control" value="Main"></div>
+            </div>`;
+    } else if (module === 'employees') {
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Employee Name</label><input id="form-name" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Email</label><input id="form-email" type="email" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Mobile Number</label><input id="form-mobile" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label">Department</label><input id="form-department" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label">Designation</label><input id="form-designation" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label">Password</label><input id="form-password" type="password" class="form-control" required></div>
+            </div>`;
+    } else if (module === 'departments') {
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Department Name</label><input id="form-name" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Description</label><input id="form-desc" class="form-control"></div>
+            </div>`;
+    } else if (module === 'sales' || module === 'purchases') {
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Total Amount ($)</label><input id="form-amount" type="number" step="0.01" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Notes</label><input id="form-notes" class="form-control"></div>
+            </div>`;
+    } else if (module === 'invoices') {
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Total Amount ($)</label><input id="form-amount" type="number" step="0.01" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Due Date</label><input id="form-duedate" type="date" class="form-control" required></div>
+            </div>`;
+    } else if (module === 'projects') {
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Project Name</label><input id="form-name" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Description</label><input id="form-desc" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label">Budget ($)</label><input id="form-budget" type="number" step="0.01" class="form-control" value="0.00"></div>
+            </div>`;
+    } else if (module === 'tasks') {
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Task Title</label><input id="form-title" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Description</label><input id="form-desc" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label">Priority</label><select id="form-priority" class="form-select"><option>low</option><option selected>medium</option><option>high</option><option>urgent</option></select></div>
+            </div>`;
+    } else if (module === 'leaves') {
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Employee ID</label><input id="form-emp-id" type="number" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Leave Type</label><select id="form-type" class="form-select"><option>sick</option><option>casual</option><option>annual</option></select></div>
+                <div class="col-md-6"><label class="form-label">Start Date</label><input id="form-start" type="date" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">End Date</label><input id="form-end" type="date" class="form-control" required></div>
+                <div class="col-md-12"><label class="form-label">Reason</label><input id="form-reason" class="form-control"></div>
+            </div>`;
+    } else if (module === 'payroll') {
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Employee ID</label><input id="form-emp-id" type="number" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Month</label><input id="form-month" class="form-control" placeholder="July 2026" required></div>
+                <div class="col-md-4"><label class="form-label">Basic Salary ($)</label><input id="form-basic" type="number" step="0.01" class="form-control" required></div>
+                <div class="col-md-4"><label class="form-label">Allowances ($)</label><input id="form-allowances" type="number" step="0.01" class="form-control" value="0.00"></div>
+                <div class="col-md-4"><label class="form-label">Deductions ($)</label><input id="form-deductions" type="number" step="0.01" class="form-control" value="0.00"></div>
+            </div>`;
+    } else if (module === 'attendance') {
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Employee ID</label><input id="form-emp-id" type="number" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Date</label><input id="form-date" type="date" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Status</label><select id="form-status" class="form-select"><option>present</option><option>absent</option><option>late</option></select></div>
+            </div>`;
+    }
+
+    container.innerHTML = `
+        <h5 class="mb-3">Add New Record</h5>
+        <form id="record-form">
+            ${fieldsHtml}
+            <div class="mt-4">
+                <button type="submit" class="btn btn-primary">Save Record</button>
+                <button type="button" class="btn btn-ghost" onclick="document.getElementById('add-form-container').classList.add('d-none')">Cancel</button>
+            </div>
+        </form>`;
+        
+    document.getElementById('record-form').addEventListener('submit', event => submitRecordForm(event, module));
+}
+
+async function submitRecordForm(event, module) {
+    event.preventDefault();
+    const btn = event.currentTarget.querySelector('button[type="submit"]');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    
+    let payload = {};
+    if (module === 'customers' || module === 'suppliers') {
+        payload = {
+            name: document.getElementById('form-name').value,
+            email: document.getElementById('form-email').value,
+            phone: document.getElementById('form-phone').value,
+            address: document.getElementById('form-address').value
+        };
+    } else if (module === 'inventory') {
+        payload = {
+            name: document.getElementById('form-name').value,
+            sku: document.getElementById('form-sku').value,
+            category: document.getElementById('form-category').value,
+            quantity: parseInt(document.getElementById('form-quantity').value) || 0,
+            unit_price: parseFloat(document.getElementById('form-price').value) || 0.0,
+            warehouse: document.getElementById('form-warehouse').value
+        };
+    } else if (module === 'employees') {
+        const session = getSession();
+        payload = {
+            company_code: session.companyCode,
+            employee_name: document.getElementById('form-name').value,
+            employee_email: document.getElementById('form-email').value,
+            mobile_number: document.getElementById('form-mobile').value,
+            department: document.getElementById('form-department').value,
+            designation: document.getElementById('form-designation').value,
+            password: document.getElementById('form-password').value
+        };
+    } else if (module === 'departments') {
+        payload = {
+            name: document.getElementById('form-name').value,
+            description: document.getElementById('form-desc').value
+        };
+    } else if (module === 'sales' || module === 'purchases') {
+        payload = {
+            total_amount: parseFloat(document.getElementById('form-amount').value) || 0.0,
+            notes: document.getElementById('form-notes').value
+        };
+    } else if (module === 'invoices') {
+        payload = {
+            total_amount: parseFloat(document.getElementById('form-amount').value) || 0.0,
+            due_date: document.getElementById('form-duedate').value
+        };
+    } else if (module === 'projects') {
+        payload = {
+            name: document.getElementById('form-name').value,
+            description: document.getElementById('form-desc').value,
+            budget: parseFloat(document.getElementById('form-budget').value) || 0.0
+        };
+    } else if (module === 'tasks') {
+        payload = {
+            title: document.getElementById('form-title').value,
+            description: document.getElementById('form-desc').value,
+            priority: document.getElementById('form-priority').value
+        };
+    } else if (module === 'leaves') {
+        payload = {
+            employee_id: parseInt(document.getElementById('form-emp-id').value),
+            leave_type: document.getElementById('form-type').value,
+            start_date: document.getElementById('form-start').value,
+            end_date: document.getElementById('form-end').value,
+            reason: document.getElementById('form-reason').value
+        };
+    } else if (module === 'payroll') {
+        payload = {
+            employee_id: parseInt(document.getElementById('form-emp-id').value),
+            month: document.getElementById('form-month').value,
+            basic_salary: parseFloat(document.getElementById('form-basic').value) || 0.0,
+            allowances: parseFloat(document.getElementById('form-allowances').value) || 0.0,
+            deductions: parseFloat(document.getElementById('form-deductions').value) || 0.0
+        };
+    }
+
+    try {
+        const path = module === 'employees' ? '/employees/register' : `/erp/${module}`;
+        await api(path, { method: 'POST', body: payload });
+        showToast('Record saved successfully!', 'success');
+        loadModule(module);
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        btn.disabled = false; btn.textContent = 'Save Record';
+    }
+}
+
+function openEmployeeRegisterModal() {
+    openRegisterModal();
+    // Re-render model body for employee registration
+    document.getElementById('register-modal-body').innerHTML = `
+        <div class="mb-4">
+            <h4 class="mb-1">Employee Registration</h4>
+            <p class="text-muted small mb-0">Join your company's workspace using the unique company code.</p>
+        </div>
+        <form id="emp-reg-form">
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Company Code</label><input id="emp-ccode" class="form-control text-uppercase" placeholder="COMP-XXXXXX" required></div>
+                <div class="col-md-6"><label class="form-label">Full Name</label><input id="emp-name" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Email Address</label><input id="emp-email" type="email" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Mobile Number</label><input id="emp-mobile" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label">Department</label><input id="emp-dept" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label">Designation</label><input id="emp-desig" class="form-control"></div>
+                <div class="col-md-12"><label class="form-label">Password</label><input id="emp-pass" type="password" minlength="8" class="form-control" required></div>
+            </div>
+            <button class="btn btn-primary w-100 mt-4" type="submit">Register Account</button>
+        </form>`;
+    document.getElementById('emp-reg-form').addEventListener('submit', handleEmployeeRegister);
+}
+
+async function handleEmployeeRegister(event) {
+    event.preventDefault();
+    const btn = event.currentTarget.querySelector('button');
+    btn.disabled = true; btn.textContent = 'Registering…';
+    
+    const payload = {
+        company_code: document.getElementById('emp-ccode').value.trim().toUpperCase(),
+        employee_name: document.getElementById('emp-name').value.trim(),
+        employee_email: document.getElementById('emp-email').value.trim(),
+        mobile_number: document.getElementById('emp-mobile').value.trim(),
+        department: document.getElementById('emp-dept').value.trim(),
+        designation: document.getElementById('emp-desig').value.trim(),
+        password: document.getElementById('emp-pass').value
+    };
+
+    try {
+        const response = await fetch(API + '/employees/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await readApiResponse(response);
+        if (!response.ok) throw new Error(data.detail || 'Registration failed');
+        showToast('Registration successful! You can now log in.', 'success');
+        closeRegisterModal();
+    } catch (err) {
+        showToast(err.message, 'error');
+    } finally {
+        btn.disabled = false; btn.textContent = 'Register Account';
+    }
 }
 
 function toggleVoiceAssistant() {
@@ -156,20 +635,89 @@ function toggleVoiceAssistant() {
     recognition.start(); showToast('Listening…', 'info');
 }
 
-function handleVoiceCommand(transcript) {
+async function handleVoiceCommand(transcript) {
     const command = transcript.toLowerCase();
-    const matches = { inventory: 'inventory', customer: 'customers', supplier: 'suppliers', sales: 'sales', purchase: 'purchases', invoice: 'invoices', project: 'projects', task: 'tasks', notification: 'notifications', dashboard: 'dashboard' };
+    const matches = {
+        inventory: 'inventory',
+        customer: 'customers',
+        supplier: 'suppliers',
+        sales: 'sales',
+        purchase: 'purchases',
+        invoice: 'invoices',
+        project: 'projects',
+        task: 'tasks',
+        notification: 'notifications',
+        dashboard: 'dashboard',
+        employee: 'employees',
+        department: 'departments',
+        attendance: 'attendance',
+        leave: 'leaves',
+        payroll: 'payroll',
+        settings: 'settings'
+    };
+    
+    // First try a quick local route match
     const module = Object.entries(matches).find(([word]) => command.includes(word))?.[1];
-    if (module) { loadModule(module); speak(`Opening ${module}`); showToast(`Voice command: ${transcript}`, 'success'); }
-    else { speak('I can open the dashboard, customers, inventory, sales, purchases, invoices, projects, tasks, and notifications.'); showToast(`I didn't understand “${transcript}”.`, 'info'); }
+    if (module && (command.startsWith('open ') || command.startsWith('show '))) {
+        loadModule(module);
+        speak(`Opening ${module}`);
+        showToast(`Voice command: ${transcript}`, 'success');
+        return;
+    }
+    
+    // Otherwise fallback to the backend AI-native voice processing endpoint
+    try {
+        const response = await api('/erp/ai-voice', {
+            method: 'POST',
+            body: { transcript }
+        });
+        
+        if (response.speech) speak(response.speech);
+        showToast(`AI Response: ${response.speech}`, 'success');
+        
+        if (response.action === 'navigate' && response.target) {
+            loadModule(response.target);
+            // Highlight the active button in sidebar
+            document.querySelectorAll('[data-module]').forEach(item => {
+                item.classList.toggle('active', item.dataset.module === response.target);
+            });
+        } else if (response.action === 'refresh' && response.target) {
+            loadModule(response.target);
+        }
+    } catch (err) {
+        showToast('AI command fallback failed. Try again.', 'error');
+    }
 }
 
-function speak(text) { if ('speechSynthesis' in window) { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } }
-function showToast(message, type = 'info') { let container = document.querySelector('.toast-container'); if (!container) { container = document.createElement('div'); container.className = 'toast-container'; document.body.append(container); } const toast = document.createElement('div'); toast.className = `toast-msg ${type}`; toast.textContent = message; container.append(toast); setTimeout(() => toast.remove(), 4500); }
+function speak(text) {
+    if ('speechSynthesis' in window) {
+        speechSynthesis.cancel();
+        speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    }
+}
+
+function showToast(message, type = 'info') {
+    let container = document.querySelector('.toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.className = 'toast-container';
+        document.body.append(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = `toast-msg ${type}`;
+    toast.textContent = message;
+    container.append(toast);
+    setTimeout(() => toast.remove(), 4500);
+}
 
 function logout() {
     if (recognition) recognition.stop();
-    [localStorage, sessionStorage].forEach(store => { store.removeItem('erp_token'); store.removeItem('erp_role'); store.removeItem('erp_company_name'); });
+    [localStorage, sessionStorage].forEach(store => {
+        store.removeItem('erp_token');
+        store.removeItem('erp_role');
+        store.removeItem('erp_company_name');
+        store.removeItem('erp_company_code');
+    });
     renderLogin();
 }
 
