@@ -6,6 +6,7 @@ import qrcode
 import base64
 from io import BytesIO
 from fastapi import APIRouter, Depends, HTTPException, status, Request
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.db.database import get_db
