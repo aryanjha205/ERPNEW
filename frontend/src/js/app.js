@@ -27,6 +27,14 @@ function escapeHtml(value = '') {
     return String(value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
 }
 
+async function readApiResponse(response) {
+    const contentType = response.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) return response.json();
+    const text = await response.text();
+    if (!response.ok) throw new Error('The server could not complete this request. Please try again in a moment.');
+    throw new Error(text || 'The server returned an unexpected response.');
+}
+
 function renderLogin() {
     document.getElementById('app-root').innerHTML = `
       <div class="auth-wrapper"><div class="auth-shell">
@@ -80,7 +88,7 @@ async function handleLogin(event) {
         else if (companyCode) { endpoint = '/auth/employee/login-code'; body = { company_code: companyCode, employee_email: email, password }; }
         else { endpoint = '/auth/employee/login'; body = { email, password }; }
         const response = await fetch(API + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        const data = await response.json();
+        const data = await readApiResponse(response);
         if (!response.ok) throw new Error(data.detail || 'Sign in failed');
         saveSession(data, document.getElementById('remember-session').checked); renderWorkspace(getSession());
     } catch (error) { showToast(error.message, 'error'); }
@@ -100,7 +108,7 @@ function moduleIcon(name) { return ({ Dashboard: 'grid-1x2', Customers: 'people'
 async function api(path) {
     const response = await fetch(API + path, { headers: { Authorization: `Bearer ${getSession().token}` } });
     if (response.status === 401) { logout(); throw new Error('Your session has expired.'); }
-    const data = await response.json(); if (!response.ok) throw new Error(data.detail || 'Request failed'); return data;
+    const data = await readApiResponse(response); if (!response.ok) throw new Error(data.detail || 'Request failed'); return data;
 }
 
 async function loadModule(module) {
@@ -193,10 +201,10 @@ async function requestOtp(event) {
     event.preventDefault();
     registrationData = { company_name: document.getElementById('reg-cname').value.trim(), company_type: document.getElementById('reg-ctype').value, owner_name: document.getElementById('reg-oname').value.trim(), business_email: document.getElementById('reg-email').value.trim(), mobile_number: document.getElementById('reg-mobile').value.trim(), password: document.getElementById('reg-pass').value };
     const button = event.currentTarget.querySelector('button'); button.disabled = true; button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Sending code…';
-    try { const response = await fetch(API + '/companies/request-otp', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:registrationData.business_email}) }); const data = await response.json(); if (!response.ok) throw new Error(data.detail || 'Could not send OTP'); renderRegistrationStep2(); } catch (error) { showToast(error.message, 'error'); button.disabled = false; button.innerHTML = 'Send verification code <i class="bi bi-arrow-right ms-1"></i>'; }
+    try { const response = await fetch(API + '/companies/request-otp', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:registrationData.business_email}) }); const data = await readApiResponse(response); if (!response.ok) throw new Error(data.detail || 'Could not send OTP'); renderRegistrationStep2(); } catch (error) { showToast(error.message, 'error'); button.disabled = false; button.innerHTML = 'Send verification code <i class="bi bi-arrow-right ms-1"></i>'; }
 }
 function renderRegistrationStep2() { document.getElementById('register-modal-body').innerHTML = `<div class="mb-4"><span class="eyebrow">Step 2 of 2</span><h4 class="mt-2 mb-1">Verify your email</h4><p class="text-muted small mb-0">Enter the six-digit code we sent to <strong>${escapeHtml(registrationData.business_email)}</strong>. It expires in five minutes.</p></div><form id="reg-step-2"><input id="reg-otp" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000" class="form-control form-control-lg text-center mb-3" style="letter-spacing:.45em" required><button class="btn btn-primary w-100" type="submit">Verify and create workspace</button><button class="btn btn-ghost w-100 mt-2" type="button" onclick="renderRegistrationStep1()">Back</button></form>`; document.getElementById('reg-step-2').addEventListener('submit', registerCompany); }
-async function registerCompany(event) { event.preventDefault(); registrationData.otp = document.getElementById('reg-otp').value; const button = event.currentTarget.querySelector('button[type="submit"]'); button.disabled = true; button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating workspace…'; try { const response = await fetch(API + '/companies/register', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(registrationData) }); const data = await response.json(); if (!response.ok) throw new Error(data.detail || 'Registration failed'); document.getElementById('register-modal-body').innerHTML = `<div class="text-center py-2"><i class="bi bi-check-circle-fill text-success fs-1"></i><h4 class="mt-3">Workspace created</h4><p class="text-muted small">Save this company code. Employees need it to join your workspace.</p><div class="bg-light border rounded p-3 font-mono fs-4">${escapeHtml(data.company_code)}</div><img class="img-fluid mt-3" style="max-width:180px" src="${data.qr_code_base64}" alt="Company QR code"><button data-bs-dismiss="modal" class="btn btn-primary w-100 mt-3" onclick="afterRegistration()">Done</button></div>`; } catch (error) { showToast(error.message, 'error'); button.disabled = false; button.textContent = 'Verify and create workspace'; } }
+async function registerCompany(event) { event.preventDefault(); registrationData.otp = document.getElementById('reg-otp').value; const button = event.currentTarget.querySelector('button[type="submit"]'); button.disabled = true; button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating workspace…'; try { const response = await fetch(API + '/companies/register', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(registrationData) }); const data = await readApiResponse(response); if (!response.ok) throw new Error(data.detail || 'Registration failed'); document.getElementById('register-modal-body').innerHTML = `<div class="text-center py-2"><i class="bi bi-check-circle-fill text-success fs-1"></i><h4 class="mt-3">Workspace created</h4><p class="text-muted small">Save this company code. Employees need it to join your workspace.</p><div class="bg-light border rounded p-3 font-mono fs-4">${escapeHtml(data.company_code)}</div><img class="img-fluid mt-3" style="max-width:180px" src="${data.qr_code_base64}" alt="Company QR code"><button data-bs-dismiss="modal" class="btn btn-primary w-100 mt-3" onclick="afterRegistration()">Done</button></div>`; } catch (error) { showToast(error.message, 'error'); button.disabled = false; button.textContent = 'Verify and create workspace'; } }
 function afterRegistration() { if (getSession()?.role === 'super_admin') fetchAdminData(); else showToast('Your workspace is ready. Sign in as Company administrator.', 'success'); }
 async function fetchCompanies() { return fetchAdminData(); }
 function renderCompanyRows(filter = '') {
@@ -206,4 +214,4 @@ function renderCompanyRows(filter = '') {
     const companies = adminData.companies.filter(company => [company.company_name, company.owner_name, company.business_email, company.company_code, company.company_type].join(' ').toLowerCase().includes(query));
     tbody.innerHTML = companies.length ? companies.map(company => `<tr><td><div class="company-cell"><span class="company-avatar">${escapeHtml(company.company_name.slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(company.company_name)}</strong><small>${escapeHtml(company.business_email)}</small></div></div></td><td>${escapeHtml(company.owner_name)}</td><td><code>${escapeHtml(company.company_code)}</code></td><td>${escapeHtml(company.company_type)}</td><td><span class="status-pill ${company.is_active ? 'status-active' : 'status-suspended'}"><i class="bi bi-circle-fill"></i>${company.is_active ? 'Active' : 'Suspended'}</span></td><td class="text-end"><button class="btn btn-sm ${company.is_active ? 'btn-outline-danger' : 'btn-outline-success'}" onclick="setCompanyStatus(${company.id}, ${!company.is_active})">${company.is_active ? 'Suspend' : 'Activate'}</button></td></tr>`).join('') : '<tr><td colspan="6" class="text-center p-5 text-muted">No companies match this search.</td></tr>';
 }
-async function setCompanyStatus(id, isActive) { if (!window.confirm(`Are you sure you want to ${isActive ? 'activate' : 'suspend'} this company?`)) return; try { const response = await fetch(`${API}/companies/${id}/status?is_active=${isActive}`, { method:'PATCH', headers:{Authorization:`Bearer ${getSession().token}`} }); const data = await response.json(); if (!response.ok) throw new Error(data.detail || 'Could not update company'); showToast(`Company ${isActive ? 'activated' : 'suspended'}.`, 'success'); fetchAdminData(); } catch (error) { showToast(error.message, 'error'); } }
+async function setCompanyStatus(id, isActive) { if (!window.confirm(`Are you sure you want to ${isActive ? 'activate' : 'suspend'} this company?`)) return; try { const response = await fetch(`${API}/companies/${id}/status?is_active=${isActive}`, { method:'PATCH', headers:{Authorization:`Bearer ${getSession().token}`} }); const data = await readApiResponse(response); if (!response.ok) throw new Error(data.detail || 'Could not update company'); showToast(`Company ${isActive ? 'activated' : 'suspended'}.`, 'success'); fetchAdminData(); } catch (error) { showToast(error.message, 'error'); } }
