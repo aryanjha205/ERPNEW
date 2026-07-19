@@ -1,3 +1,4 @@
+from typing import Optional
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -5,7 +6,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
-    OTP_SERVICE_URL: str
+    # Optional in hosted deployments: the API derives the same-site OTP route.
+    OTP_SERVICE_URL: Optional[str] = None
     SUPER_ADMIN_PIN: str
 
     class Config:

@@ -5,7 +5,7 @@ import requests
 import qrcode
 import base64
 from io import BytesIO
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.db.database import get_db
@@ -19,12 +19,21 @@ from app.models.employee import Employee
 
 router = APIRouter()
 
+
+def otp_service_url(request: Request) -> str:
+    """Use an explicit local URL when configured, otherwise call this Vercel deployment."""
+    if settings.OTP_SERVICE_URL:
+        return settings.OTP_SERVICE_URL
+    scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
+    host = request.headers.get("x-forwarded-host", request.url.netloc)
+    return f"{scheme}://{host}/api/otp/send-otp"
+
 def generate_company_code():
     chars = string.ascii_uppercase + string.digits
     return "COMP-" + ''.join(random.choices(chars, k=6))
 
 @router.post("/request-otp")
-def request_otp(data: CompanyRequestOTP, db: Session = Depends(get_db)):
+def request_otp(data: CompanyRequestOTP, request: Request, db: Session = Depends(get_db)):
     # Check if email is already registered
     existing_company = db.query(Company).filter(Company.business_email == data.email).first()
     if existing_company:
@@ -42,14 +51,15 @@ def request_otp(data: CompanyRequestOTP, db: Session = Depends(get_db)):
     # Call Node.js OTP Service
     try:
         res = requests.post(
-            settings.OTP_SERVICE_URL, 
-            json={"email": data.email, "otp": otp_code}
+            otp_service_url(request),
+            json={"email": data.email, "otp": otp_code},
+            timeout=15,
         )
         res.raise_for_status()
-    except Exception as e:
+    except requests.RequestException:
         db.delete(otp_record)
         db.commit()
-        raise HTTPException(status_code=500, detail="Failed to send OTP via email service")
+        raise HTTPException(status_code=502, detail="Email service is unavailable. Please try again shortly.")
 
     return {"message": "OTP sent successfully"}
 
