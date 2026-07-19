@@ -14,7 +14,9 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-app.post('/api/otp/send-otp', async (req, res) => {
+// Vercel rewrites can preserve the original URL or strip the matched prefix.
+// Accept both forms so the API works in local development and production.
+app.post(['/api/otp/send-otp', '/send-otp', '/'], async (req, res) => {
     const { email, otp } = req.body;
     if (!email || !otp) {
         return res.status(400).json({ error: 'Email and OTP are required' });
