@@ -1,0 +1,39 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "backend/vercel_app.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "otp-service/api/index.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "frontend/public/**",
+      "use": "@vercel/static"
+    },
+    {
+      "src": "frontend/src/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/otp/(.*)",
+      "dest": "otp-service/api/index.js"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "backend/vercel_app.py"
+    },
+    {
+      "src": "/src/(.*)",
+      "dest": "frontend/src/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "frontend/public/$1"
+    }
+  ]
+}
