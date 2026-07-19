@@ -476,6 +476,10 @@ body {
     font-size: 1.25rem;
 }
 
+.voice-floating-btn[hidden] {
+    display: none !important;
+}
+
 .voice-floating-btn:hover {
     transform: scale(1.08);
     box-shadow: var(--shadow-xl);

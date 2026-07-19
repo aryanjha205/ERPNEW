@@ -5,7 +5,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const session = getSession();
     session ? renderWorkspace(session) : renderLogin();
     document.getElementById('voice-btn')?.addEventListener('click', toggleVoiceAssistant);
+    syncVoiceButton(Boolean(session));
 });
+
+function syncVoiceButton(isAuthenticated = Boolean(getSession())) {
+    const button = document.getElementById('voice-btn');
+    if (button) button.hidden = !isAuthenticated;
+}
 
 function getSession() {
     const store = localStorage.getItem('erp_token') ? localStorage : sessionStorage;
@@ -36,6 +42,7 @@ async function readApiResponse(response) {
 }
 
 function renderLogin() {
+    syncVoiceButton(false);
     document.getElementById('app-root').innerHTML = `
       <div class="auth-wrapper"><div class="auth-shell">
         <section class="auth-aside"><div class="brand-lockup"><span class="brand-mark"><i class="bi bi-boxes"></i></span><span>Nexus</span></div><div class="auth-aside-copy"><span class="eyebrow">AI-native operations</span><h1>Run every part of your business from one calm workspace.</h1><p>Secure, multi-tenant ERP for the teams building what comes next.</p></div><div class="auth-feature"><i class="bi bi-shield-check"></i><div><strong>Private by design</strong><span>Every workspace is securely isolated.</span></div></div></section>
@@ -90,12 +97,14 @@ async function handleLogin(event) {
         const response = await fetch(API + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         const data = await readApiResponse(response);
         if (!response.ok) throw new Error(data.detail || 'Sign in failed');
-        saveSession(data, document.getElementById('remember-session').checked); renderWorkspace(getSession());
+        saveSession(data, document.getElementById('remember-session').checked);
+        renderWorkspace(getSession());
     } catch (error) { showToast(error.message, 'error'); }
     finally { button.disabled = false; button.innerHTML = '<span>Sign in securely</span><i class="bi bi-arrow-right"></i>'; }
 }
 
 function renderWorkspace(session) {
+    syncVoiceButton(true);
     if (session.role === 'super_admin') return renderSuperAdminDashboard();
     const root = document.getElementById('app-root');
     root.innerHTML = `<div class="app-layout"><aside class="sidebar"><div class="sidebar-brand"><span class="sidebar-brand-icon"><i class="bi bi-boxes"></i></span><div><h5>${escapeHtml(session.companyName)}</h5><small>${escapeHtml(session.role.replace('_', ' '))}</small></div></div><div class="sidebar-section"><p class="sidebar-section-title">Workspace</p><nav class="sidebar-nav">${['Dashboard','Customers','Suppliers','Inventory','Sales','Purchases','Invoices','Projects','Tasks','Notifications'].map(name => `<button class="sidebar-link ${name === 'Dashboard' ? 'active' : ''}" data-module="${name.toLowerCase()}"><i class="bi bi-${moduleIcon(name)}"></i>${name}</button>`).join('')}</nav></div><div class="sidebar-footer"><button class="sidebar-link text-danger" onclick="logout()"><i class="bi bi-box-arrow-right"></i>Sign out</button></div></aside><main class="main-content"><button class="btn btn-ghost mobile-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open')"><i class="bi bi-list"></i></button><div id="workspace-content"></div></main></div>`;
@@ -155,7 +164,11 @@ function handleVoiceCommand(transcript) {
 function speak(text) { if ('speechSynthesis' in window) { speechSynthesis.cancel(); speechSynthesis.speak(new SpeechSynthesisUtterance(text)); } }
 function showToast(message, type = 'info') { let container = document.querySelector('.toast-container'); if (!container) { container = document.createElement('div'); container.className = 'toast-container'; document.body.append(container); } const toast = document.createElement('div'); toast.className = `toast-msg ${type}`; toast.textContent = message; container.append(toast); setTimeout(() => toast.remove(), 4500); }
 
-function logout() { [localStorage, sessionStorage].forEach(store => { store.removeItem('erp_token'); store.removeItem('erp_role'); store.removeItem('erp_company_name'); }); renderLogin(); }
+function logout() {
+    if (recognition) recognition.stop();
+    [localStorage, sessionStorage].forEach(store => { store.removeItem('erp_token'); store.removeItem('erp_role'); store.removeItem('erp_company_name'); });
+    renderLogin();
+}
 
 function renderSuperAdminDashboard() {
     const root = document.getElementById('app-root');
