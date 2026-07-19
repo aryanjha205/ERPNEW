@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.api.auth import router as auth_router
+from app.api.companies import router as companies_router
 
 app = FastAPI(title="AI Voice ERP API")
 
@@ -13,6 +14,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/api/auth", tags=["Authentication"])
+app.include_router(companies_router, prefix="/api/companies", tags=["Companies"])
 
 @app.get("/")
 def read_root():
