@@ -19,6 +19,8 @@ class CompanyResponse(BaseModel):
     company_type: str
     company_code: str
     is_active: bool
+    owner_name: str
+    business_email: EmailStr
 
     class Config:
         from_attributes = True

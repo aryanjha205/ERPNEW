@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.models.company import Company
 from app.models.employee import Employee
-from app.core.security import get_password_hash, verify_password, create_access_token
+from app.core.security import get_password_hash, verify_password, create_access_token, validate_password
 
 router = APIRouter()
 
@@ -35,6 +35,10 @@ class CompanyCodeLogin(BaseModel):
 
 @router.post("/register")
 def register_employee(data: EmployeeRegister, db: Session = Depends(get_db)):
+    try:
+        validate_password(data.password)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     # Validate Company Code
     company = db.query(Company).filter(
         Company.company_code == data.company_code,

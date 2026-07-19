@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.db.database import get_db
 from app.models.employee import Employee
+from app.models.company import Company
 
 security = HTTPBearer()
 
@@ -32,6 +33,9 @@ def get_current_user(
     # Company admin (subject = "company-admin:<company_id>")
     if subject.startswith("company-admin:"):
         company_id = int(subject.split(":")[1])
+        company = db.query(Company).filter(Company.id == company_id).first()
+        if not company or not company.is_active:
+            raise HTTPException(status_code=401, detail="Company suspended or unavailable")
         return {"role": "company_admin", "sub": subject, "company_id": company_id}
 
     # Employee (subject = "employee:<employee_id>")
@@ -40,6 +44,9 @@ def get_current_user(
         employee = db.query(Employee).filter(Employee.id == emp_id).first()
         if not employee or not employee.is_active:
             raise HTTPException(status_code=401, detail="Account deactivated")
+        company = db.query(Company).filter(Company.id == employee.company_id).first()
+        if not company or not company.is_active:
+            raise HTTPException(status_code=401, detail="Company suspended or unavailable")
         return {
             "role": employee.role,
             "sub": subject,

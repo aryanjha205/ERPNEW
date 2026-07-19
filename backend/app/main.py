@@ -13,8 +13,10 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    # The PWA and API share an origin in production. Avoid wildcard credential
+    # CORS, which browsers reject and which would expose authenticated requests.
+    allow_origins=["http://localhost:3000", "http://localhost:8000"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

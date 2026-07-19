@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Union
+import hashlib
 from jose import jwt
 from passlib.context import CryptContext
 from .config import settings
@@ -24,3 +25,15 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
+
+
+def validate_password(password: str) -> None:
+    """Raise a safe validation error when a credential is too weak."""
+    if len(password) < 8 or not any(char.isupper() for char in password) or not any(char.islower() for char in password) or not any(char.isdigit() for char in password):
+        raise ValueError("Password must be at least 8 characters and include upper-case, lower-case, and a number")
+
+
+def hash_otp(email: str, otp: str) -> str:
+    """Store only a keyed digest of a verification code, never the raw OTP."""
+    payload = f"{email.lower()}:{otp}:{settings.SECRET_KEY}".encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
