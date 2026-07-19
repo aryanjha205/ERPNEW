@@ -6,6 +6,9 @@ document.addEventListener('DOMContentLoaded', () => {
     session ? renderWorkspace(session) : renderLogin();
     document.getElementById('voice-btn')?.addEventListener('click', toggleVoiceAssistant);
     syncVoiceButton(Boolean(session));
+    document.getElementById('registerCompanyModal')?.addEventListener('click', event => {
+        if (!window.bootstrap && (event.target.matches('[data-bs-dismiss="modal"]') || event.target.closest('[data-bs-dismiss="modal"]'))) closeRegisterModal();
+    });
 });
 
 function syncVoiceButton(isAuthenticated = Boolean(getSession())) {
@@ -204,7 +207,27 @@ function adminCompaniesView() {
 }
 
 let registrationData = {};
-function openRegisterModal() { registrationData = { platformCreation: getSession()?.role === 'super_admin' }; renderRegistrationStep1(); new bootstrap.Modal(document.getElementById('registerCompanyModal')).show(); }
+function openRegisterModal() {
+    registrationData = { platformCreation: getSession()?.role === 'super_admin' };
+    renderRegistrationStep1();
+    const modal = document.getElementById('registerCompanyModal');
+    if (window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modal).show();
+        return;
+    }
+    modal.style.display = 'block';
+    modal.removeAttribute('aria-hidden');
+    modal.setAttribute('aria-modal', 'true');
+    modal.classList.add('show');
+    document.body.classList.add('modal-open');
+}
+function closeRegisterModal() {
+    const modal = document.getElementById('registerCompanyModal');
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+    modal.classList.remove('show');
+    document.body.classList.remove('modal-open');
+}
 function renderRegistrationStep1() {
     const types = ['Manufacturing', 'Chemical Industry', 'Pharmaceutical', 'Retail', 'Wholesale', 'Trading', 'Construction', 'Hospital', 'School', 'Restaurant', 'Hotel', 'Logistics', 'Warehouse', 'Agriculture', 'Textile', 'Automobile', 'Electronics', 'IT Company', 'Service Business', 'Custom Business'];
     document.getElementById('register-modal-body').innerHTML = `<div class="mb-4"><span class="eyebrow">Step 1 of 2</span><h4 class="mt-2 mb-1">Create your workspace</h4><p class="text-muted small mb-0">Your verified email becomes the company administrator account.</p></div><form id="reg-step-1"><div class="row g-3"><div class="col-md-6"><label class="form-label">Company name</label><input id="reg-cname" class="form-control" autocomplete="organization" required></div><div class="col-md-6"><label class="form-label">Company type</label><select id="reg-ctype" class="form-select">${types.map(type => `<option>${type}</option>`).join('')}</select></div><div class="col-md-6"><label class="form-label">Owner name</label><input id="reg-oname" class="form-control" autocomplete="name" required></div><div class="col-md-6"><label class="form-label">Business email</label><input id="reg-email" type="email" class="form-control" autocomplete="email" required></div><div class="col-md-6"><label class="form-label">Mobile number</label><input id="reg-mobile" type="tel" class="form-control" autocomplete="tel" required></div><div class="col-md-6"><label class="form-label">Admin password</label><input id="reg-pass" type="password" minlength="8" class="form-control" autocomplete="new-password" required><div class="form-text">8+ characters with upper-case, lower-case, and a number.</div></div></div><button class="btn btn-primary w-100 mt-4" type="submit">Send verification code <i class="bi bi-arrow-right ms-1"></i></button></form>`;
@@ -213,9 +236,8 @@ function renderRegistrationStep1() {
         form.querySelector('button[type="submit"]').innerHTML = 'Create workspace <i class="bi bi-arrow-right ms-1"></i>';
         form.addEventListener('submit', createCompanyAsSuperAdmin);
     } else {
-        form.querySelector('.text-muted.small.mb-0').textContent = 'Your request will be reviewed by a platform administrator before this workspace can sign in.';
-        form.querySelector('button[type="submit"]').innerHTML = 'Submit approval request <i class="bi bi-arrow-right ms-1"></i>';
-        form.addEventListener('submit', submitCompanyRequest);
+        form.querySelector('button[type="submit"]').innerHTML = 'Send verification code <i class="bi bi-arrow-right ms-1"></i>';
+        form.addEventListener('submit', requestOtp);
     }
 }
 function companyFormData() { return { company_name: document.getElementById('reg-cname').value.trim(), company_type: document.getElementById('reg-ctype').value, owner_name: document.getElementById('reg-oname').value.trim(), business_email: document.getElementById('reg-email').value.trim(), mobile_number: document.getElementById('reg-mobile').value.trim(), password: document.getElementById('reg-pass').value }; }

@@ -29,6 +29,8 @@ def get_password_hash(password: str) -> str:
 
 def validate_password(password: str) -> None:
     """Raise a safe validation error when a credential is too weak."""
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("Password must be 72 bytes or fewer")
     if len(password) < 8 or not any(char.isupper() for char in password) or not any(char.islower() for char in password) or not any(char.isdigit() for char in password):
         raise ValueError("Password must be at least 8 characters and include upper-case, lower-case, and a number")
 

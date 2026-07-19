@@ -11,8 +11,7 @@ class CompanyRegister(BaseModel):
     business_email: EmailStr
     mobile_number: str
     password: str
-    # Platform approval is the verification gate for self-service requests.
-    otp: Optional[str] = None
+    otp: str
 
 class CompanyCreate(BaseModel):
     company_name: str
