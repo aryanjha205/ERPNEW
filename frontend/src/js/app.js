@@ -44,10 +44,17 @@ function escapeHtml(value = '') {
 
 async function readApiResponse(response) {
     const contentType = response.headers.get('content-type') || '';
-    if (contentType.includes('application/json')) return response.json();
-    const text = await response.text();
-    if (!response.ok) throw new Error('The server could not complete this request. Please try again in a moment.');
-    return text;
+    let body;
+    if (contentType.includes('application/json')) {
+        body = await response.json();
+    } else {
+        body = await response.text();
+    }
+    if (!response.ok) {
+        const errorMsg = typeof body === 'object' && body.detail ? body.detail : (typeof body === 'string' && body ? body : 'The server could not complete this request. Please try again in a moment.');
+        throw new Error(errorMsg);
+    }
+    return body;
 }
 
 function renderLogin() {
@@ -127,7 +134,7 @@ function renderWorkspace(session) {
     const modules = [
         'Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll',
         'Customers', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices',
-        'Projects', 'Tasks', 'Notifications', 'Settings'
+        'Projects', 'Tasks', 'Reports', 'Notifications', 'Settings'
     ];
     root.innerHTML = `
       <div class="app-layout">
@@ -182,6 +189,7 @@ function moduleIcon(name) {
         Invoices: 'receipt',
         Projects: 'kanban',
         Tasks: 'check2-square',
+        Reports: 'bar-chart-line',
         Notifications: 'bell',
         Settings: 'gear'
     })[name];
@@ -211,11 +219,148 @@ async function loadModule(module) {
         if (module === 'settings') {
             return renderSettings(await api('/erp/settings'));
         }
+        if (module === 'reports') {
+            return renderReports(await api('/erp/reports'));
+        }
         const records = await api(`/erp/${module}`);
         renderRecords(module, records);
     } catch (error) {
         target.innerHTML = `<div class="alert alert-danger">${escapeHtml(error.message)}</div>`;
     }
+}
+
+function renderReports(data) {
+    const summary = data.summary || {};
+    document.getElementById('workspace-content').innerHTML = `
+        <div class="page-header">
+            <div>
+                <h2>Reports & Analytics</h2>
+                <p class="text-muted mb-0">Executive reports and data export center.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print Report</button>
+                <button class="btn btn-primary" onclick="exportReportsCsv()"><i class="bi bi-download me-1"></i>Export CSV Summary</button>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-sm-6 col-xl-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Total Revenue</h6>
+                        <div class="stat-value text-success">${summary.total_revenue?.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) || '$0.00'}</div>
+                        <small class="text-muted">From Sales Orders</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Total Expenses</h6>
+                        <div class="stat-value text-danger">${summary.total_expenses?.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) || '$0.00'}</div>
+                        <small class="text-muted">Purchases & Payroll</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Net Profit</h6>
+                        <div class="stat-value ${summary.net_profit >= 0 ? 'text-primary' : 'text-warning'}">${summary.net_profit?.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) || '$0.00'}</div>
+                        <small class="text-muted">Net Operating Profit</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Inventory Valuation</h6>
+                        <div class="stat-value text-info">${summary.inventory_valuation?.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) || '$0.00'}</div>
+                        <small class="text-muted">Total Asset Value</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card p-4 mb-4">
+            <h5 class="mb-3">Detailed Module Metrics</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>Report Category</th>
+                            <th>Key Metric 1</th>
+                            <th>Key Metric 2</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Sales Report</strong></td>
+                            <td>Total Orders: ${data.sales?.total_orders || 0}</td>
+                            <td>Revenue: $${data.sales?.total_amount || 0}</td>
+                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Sales', [['Total Orders', '${data.sales?.total_orders}'], ['Total Revenue', '${data.sales?.total_amount}']])">Export Sales CSV</button></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Purchases Report</strong></td>
+                            <td>Purchase Orders: ${data.purchases?.total_orders || 0}</td>
+                            <td>Expenses: $${data.purchases?.total_amount || 0}</td>
+                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Purchases', [['Total Orders', '${data.purchases?.total_orders}'], ['Total Expenses', '${data.purchases?.total_amount}']])">Export Purchases CSV</button></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Payroll Report</strong></td>
+                            <td>Total Salary Payout: $${data.payroll?.total_payout || 0}</td>
+                            <td>Status: Calculated</td>
+                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Payroll', [['Total Payout', '${data.payroll?.total_payout}']])">Export Payroll CSV</button></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Inventory Report</strong></td>
+                            <td>Item SKUs: ${data.inventory?.item_types || 0}</td>
+                            <td>Total Valuation: $${data.inventory?.valuation || 0}</td>
+                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Inventory', [['Item SKUs', '${data.inventory?.item_types}'], ['Valuation', '${data.inventory?.valuation}']])">Export Inventory CSV</button></td>
+                        </tr>
+                        <tr>
+                            <td><strong>CRM (Customers & Suppliers)</strong></td>
+                            <td>Customers: ${data.crm?.customers || 0}</td>
+                            <td>Suppliers: ${data.crm?.suppliers || 0}</td>
+                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('CRM', [['Customers', '${data.crm?.customers}'], ['Suppliers', '${data.crm?.suppliers}']])">Export CRM CSV</button></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Attendance Report</strong></td>
+                            <td>Present: ${data.attendance?.present || 0}</td>
+                            <td>Absent: ${data.attendance?.absent || 0}</td>
+                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Attendance', [['Present', '${data.attendance?.present}'], ['Absent', '${data.attendance?.absent}']])">Export Attendance CSV</button></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+    window.lastReportData = data;
+}
+
+function exportCategoryCsv(category, rows) {
+    let csvContent = "data:text/csv;charset=utf-8," + `Metric,Value\n` + rows.map(e => e.join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `${category.toLowerCase()}_report.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`${category} CSV report downloaded`, 'success');
+}
+
+function exportReportsCsv() {
+    if (!window.lastReportData) return showToast('No report data available to export', 'error');
+    const d = window.lastReportData.summary || {};
+    const rows = [
+        ["Report", "Executive ERP Summary"],
+        ["Total Revenue", d.total_revenue || 0],
+        ["Total Expenses", d.total_expenses || 0],
+        ["Net Profit", d.net_profit || 0],
+        ["Inventory Valuation", d.inventory_valuation || 0]
+    ];
+    exportCategoryCsv("Executive_Summary", rows);
 }
 
 function renderDashboard(data) {

@@ -50,6 +50,7 @@ def request_otp(data: CompanyRequestOTP, request: Request, db: Session = Depends
     db.commit()
 
     # Call Node.js OTP Service
+    dev_otp = None
     try:
         res = requests.post(
             otp_service_url(request),
@@ -60,8 +61,9 @@ def request_otp(data: CompanyRequestOTP, request: Request, db: Session = Depends
     except requests.RequestException:
         # Fallback for local development: log OTP to stdout so developers can bypass and verify
         print(f"\n[DEVELOPMENT FALLBACK] Generated OTP for {data.email} is: {otp_code}\n")
+        dev_otp = otp_code
 
-    return {"message": "OTP sent successfully"}
+    return {"message": "OTP sent successfully", "dev_otp": dev_otp}
 
 def generate_qr_code_base64(code: str) -> str:
     qr = qrcode.QRCode(version=1, box_size=10, border=5)

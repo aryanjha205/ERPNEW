@@ -363,7 +363,53 @@ def get_settings(user: dict = Depends(get_current_user)):
 def update_settings(data: SettingsUpdate, user: dict = Depends(get_current_user)):
     return {"ok": True, "message": "Settings updated"}
 
-# ──────────────────────────── AI Voice Fallback ────────────────────────────
+@router.get("/reports")
+def get_reports(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    cid = _cid(user)
+    
+    # Sales Aggregates
+    sales_total = db.query(sqlfunc.coalesce(sqlfunc.sum(SalesOrder.total_amount), 0)).filter(SalesOrder.company_id == cid).scalar()
+    sales_count = db.query(sqlfunc.count(SalesOrder.id)).filter(SalesOrder.company_id == cid).scalar() or 0
+    
+    # Purchases Aggregates
+    purchases_total = db.query(sqlfunc.coalesce(sqlfunc.sum(PurchaseOrder.total_amount), 0)).filter(PurchaseOrder.company_id == cid).scalar()
+    purchases_count = db.query(sqlfunc.count(PurchaseOrder.id)).filter(PurchaseOrder.company_id == cid).scalar() or 0
+    
+    # Inventory Valuation
+    inventory_items = db.query(InventoryItem).filter(InventoryItem.company_id == cid).all()
+    inventory_valuation = sum((item.quantity or 0) * (item.unit_price or 0.0) for item in inventory_items)
+    inventory_count = len(inventory_items)
+
+    # Customer & Supplier Counts
+    customer_count = db.query(sqlfunc.count(Customer.id)).filter(Customer.company_id == cid).scalar() or 0
+    supplier_count = db.query(sqlfunc.count(Supplier.id)).filter(Supplier.company_id == cid).scalar() or 0
+
+    # Payroll Total
+    payroll_total = db.query(sqlfunc.coalesce(sqlfunc.sum(Payroll.net_salary), 0)).filter(Payroll.company_id == cid).scalar()
+
+    # Attendance summary
+    present_count = db.query(sqlfunc.count(Attendance.id)).filter(Attendance.company_id == cid, Attendance.status == "present").scalar() or 0
+    absent_count = db.query(sqlfunc.count(Attendance.id)).filter(Attendance.company_id == cid, Attendance.status == "absent").scalar() or 0
+
+    return {
+        "summary": {
+            "total_revenue": float(sales_total),
+            "total_expenses": float(purchases_total) + float(payroll_total),
+            "net_profit": float(sales_total) - (float(purchases_total) + float(payroll_total)),
+            "inventory_valuation": float(inventory_valuation),
+        },
+        "sales": {"total_amount": float(sales_total), "total_orders": sales_count},
+        "purchases": {"total_amount": float(purchases_total), "total_orders": purchases_count},
+        "payroll": {"total_payout": float(payroll_total)},
+        "inventory": {"item_types": inventory_count, "valuation": float(inventory_valuation)},
+        "crm": {"customers": customer_count, "suppliers": supplier_count},
+        "attendance": {"present": present_count, "absent": absent_count}
+    }
+
+
+# ──────────────────────────── AI Voice Provider Integration ────────────────────────────
+
+from app.services.ai_voice import get_ai_voice_provider
 
 class VoiceCommandRequest(BaseModel):
     transcript: str
@@ -371,41 +417,7 @@ class VoiceCommandRequest(BaseModel):
 @router.post("/ai-voice")
 def process_voice_command(data: VoiceCommandRequest, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     cid = _cid(user)
-    text = data.transcript.lower().strip()
-    
-    if "show inventory" in text or "check inventory" in text:
-        return {"action": "navigate", "target": "inventory", "speech": "Displaying your inventory catalog."}
-    elif "open crm" in text or "show customer" in text or "list customer" in text:
-        return {"action": "navigate", "target": "customers", "speech": "Opening customer database."}
-    elif "show supplier" in text or "list supplier" in text:
-        return {"action": "navigate", "target": "suppliers", "speech": "Opening suppliers list."}
-    elif "show sales" in text or "today's sales" in text:
-        return {"action": "navigate", "target": "sales", "speech": "Displaying sales history."}
-    elif "show invoices" in text or "search invoice" in text:
-        return {"action": "navigate", "target": "invoices", "speech": "Opening invoice module."}
-    elif "show projects" in text:
-        return {"action": "navigate", "target": "projects", "speech": "Opening projects list."}
-    elif "show tasks" in text or "pending tasks" in text:
-        return {"action": "navigate", "target": "tasks", "speech": "Opening task manager."}
-    elif "show attendance" in text:
-        return {"action": "navigate", "target": "attendance", "speech": "Opening employee attendance register."}
-    elif "show payroll" in text or "generate payroll" in text:
-        return {"action": "navigate", "target": "payroll", "speech": "Opening payroll module."}
-    elif "add customer" in text:
-        name = data.transcript.lower().replace("add customer", "", 1).strip().title()
-        if not name: name = "Unnamed Customer"
-        cust = Customer(company_id=cid, name=name, email="", phone="", address="")
-        db.add(cust); db.commit(); db.refresh(cust)
-        return {"action": "refresh", "target": "customers", "speech": f"Successfully created customer {name}."}
-    elif "create task" in text or "add task" in text:
-        title = data.transcript.lower().replace("create task", "", 1).replace("add task", "", 1).strip().capitalize()
-        if not title: title = "New voice task"
-        task = Task(company_id=cid, title=title, description="Created via voice assistant", priority="medium", status="todo")
-        db.add(task); db.commit(); db.refresh(task)
-        return {"action": "refresh", "target": "tasks", "speech": f"Successfully created task: {title}."}
-    else:
-        return {
-            "action": "none",
-            "speech": f"I heard you say: {data.transcript}. Try saying: 'show inventory', 'add customer Acme Corp', or 'show tasks'."
-        }
+    provider = get_ai_voice_provider()
+    return provider.process_command(transcript=data.transcript, company_id=cid, db=db)
+
 
