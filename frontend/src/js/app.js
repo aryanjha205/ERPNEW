@@ -1177,8 +1177,8 @@ function toggleMicRecording() {
     }
     
     const statusEl = document.getElementById('ai-voice-status');
+    const statusTextEl = document.getElementById('voice-status-text');
     const micBtn = document.getElementById('ai-mic-btn');
-    const timerCountEl = document.getElementById('voice-timer-count');
 
     if (isListening) {
         stopMicRecording();
@@ -1197,8 +1197,8 @@ function toggleMicRecording() {
         speechRecognizer.onstart = () => {
             isListening = true;
             if (statusEl) statusEl.classList.remove('d-none');
+            if (statusTextEl) statusTextEl.innerHTML = '<span class="pulse-dot me-1"></span> Listening… Speak your command';
             if (micBtn) micBtn.classList.add('recording');
-            if (timerCountEl) timerCountEl.textContent = '4';
         };
 
         speechRecognizer.onresult = event => {
@@ -1212,12 +1212,12 @@ function toggleMicRecording() {
 
             // Start or reset 4-second auto-send countdown AFTER speech is detected
             secondsRemaining = 4;
-            if (timerCountEl) timerCountEl.textContent = '4';
+            if (statusTextEl) statusTextEl.innerHTML = `<span class="spinner-grow spinner-grow-sm me-1 text-primary"></span> Speech detected! Sending in <strong>${secondsRemaining}s</strong>…`;
 
             clearInterval(voiceCountdownTimer);
             voiceCountdownTimer = setInterval(() => {
                 secondsRemaining--;
-                if (timerCountEl) timerCountEl.textContent = Math.max(0, secondsRemaining);
+                if (statusTextEl) statusTextEl.innerHTML = `<span class="spinner-grow spinner-grow-sm me-1 text-primary"></span> Speech detected! Sending in <strong>${Math.max(0, secondsRemaining)}s</strong>…`;
                 if (secondsRemaining <= 0) {
                     clearInterval(voiceCountdownTimer);
                     stopMicRecordingAndSend();
