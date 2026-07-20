@@ -805,3 +805,74 @@ body {
 }
 
 @media (max-width: 767px) { .auth-wrapper { padding: 0; align-items: stretch; }.auth-shell { min-height: 100vh; border: 0; border-radius: 0; grid-template-columns: 1fr; }.auth-aside { display: none; }.auth-container { padding: 2rem 1.35rem; }.auth-mobile-brand { display: flex; }.directory-toolbar { align-items: stretch; flex-direction: column; }.directory-toolbar > span { display: none; }.admin-header { align-items: flex-start; }.admin-header .btn { width: 100%; }.admin-table { min-width: 760px; } }
+
+/* ─── Attendance Punch Card ─── */
+.attendance-punch-card {
+    background: linear-gradient(135deg, var(--surface) 0%, var(--primary-subtle) 100%);
+    border: 1px solid var(--border);
+}
+.attendance-punch-card .card-body { padding: 1.5rem; }
+.punch-avatar {
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: var(--primary-subtle);
+    color: var(--primary);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+}
+.attendance-stat {
+    padding: 0.5rem 0.25rem;
+    border-radius: var(--radius);
+    background: var(--surface);
+    border: 1px solid var(--border);
+}
+
+/* ─── Status Pills ─── */
+.status-pill {
+    font-weight: 500;
+    font-size: 0.72rem;
+    letter-spacing: 0.02em;
+    text-transform: capitalize;
+    padding: 0.3em 0.7em;
+    border-radius: 999px;
+}
+.bg-orange { background: #f97316 !important; color: #fff; }
+
+/* ─── Table Enhancements ─── */
+.table thead th {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    border-bottom: 2px solid var(--border);
+    padding: 0.75rem 1rem;
+    white-space: nowrap;
+}
+.table tbody td {
+    padding: 0.75rem 1rem;
+    vertical-align: middle;
+    border-bottom: 1px solid var(--border);
+}
+.table-hover tbody tr:hover {
+    background: var(--surface-hover);
+}
+.table code {
+    background: var(--primary-subtle);
+    color: var(--primary);
+    padding: 0.15em 0.45em;
+    border-radius: 4px;
+    font-size: 0.82em;
+}
+.btn-group-sm > .btn {
+    font-size: 0.78rem;
+    padding: 0.25rem 0.6rem;
+}
+
+/* ─── Form Cards ─── */
+#add-form-container {
+    animation: slideDown 0.2s ease;
+}
+@keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+}

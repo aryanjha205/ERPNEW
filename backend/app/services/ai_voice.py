@@ -157,8 +157,64 @@ class FreeAIProvider(BaseAIProvider):
         if any(kw in text for kw in ["show tasks", "pending tasks", "my tasks"]):
             return {"action": "navigate", "target": "tasks", "speech": "Opening task list."}
 
-        if any(kw in text for kw in ["show attendance", "check attendance", "employee attendance"]):
+        if any(kw in text for kw in ["show attendance", "check attendance", "employee attendance", "attendance register", "open attendance"]):
             return {"action": "navigate", "target": "attendance", "speech": "Opening employee attendance register."}
+
+        if any(kw in text for kw in ["check in", "checkin", "punch in", "mark present", "clock in"]):
+            try:
+                emp_id_for_checkin = None
+                emp = db.query(Employee).filter(Employee.company_id == company_id).first()
+                if emp:
+                    emp_id_for_checkin = emp.id
+                if emp_id_for_checkin:
+                    import datetime as dt
+                    today = dt.date.today()
+                    now = dt.datetime.now(dt.timezone.utc)
+                    existing = db.query(Attendance).filter(
+                        Attendance.company_id == company_id,
+                        Attendance.employee_id == emp_id_for_checkin,
+                        Attendance.date == today
+                    ).first()
+                    if not existing:
+                        att = Attendance(company_id=company_id, employee_id=emp_id_for_checkin, date=today, check_in=now, status="present")
+                        db.add(att); db.commit()
+                    elif not existing.check_in:
+                        existing.check_in = now; existing.status = "present"; db.commit()
+                    return {"action": "navigate", "target": "attendance", "speech": f"You have been checked in at {now.strftime('%I:%M %p')}. Have a productive day!"}
+            except Exception:
+                pass
+            return {"action": "navigate", "target": "attendance", "speech": "Opening attendance for check-in."}
+
+        if any(kw in text for kw in ["check out", "checkout", "punch out", "clock out"]):
+            try:
+                emp = db.query(Employee).filter(Employee.company_id == company_id).first()
+                if emp:
+                    import datetime as dt
+                    today = dt.date.today()
+                    now = dt.datetime.now(dt.timezone.utc)
+                    existing = db.query(Attendance).filter(
+                        Attendance.company_id == company_id,
+                        Attendance.employee_id == emp.id,
+                        Attendance.date == today
+                    ).first()
+                    if existing:
+                        existing.check_out = now; db.commit()
+                        return {"action": "navigate", "target": "attendance", "speech": f"You have been checked out at {now.strftime('%I:%M %p')}. Good work today!"}
+            except Exception:
+                pass
+            return {"action": "navigate", "target": "attendance", "speech": "Opening attendance for check-out."}
+
+        if any(kw in text for kw in ["today attendance", "today's attendance", "attendance summary", "attendance today"]):
+            try:
+                import datetime as dt
+                today = dt.date.today()
+                from sqlalchemy import func as sqf
+                present = db.query(sqf.count(Attendance.id)).filter(Attendance.company_id == company_id, Attendance.date == today, Attendance.status == "present").scalar() or 0
+                absent = db.query(sqf.count(Attendance.id)).filter(Attendance.company_id == company_id, Attendance.date == today, Attendance.status == "absent").scalar() or 0
+                return {"action": "navigate", "target": "attendance", "speech": f"Today's attendance: {present} employees present and {absent} absent."}
+            except Exception:
+                pass
+            return {"action": "navigate", "target": "attendance", "speech": "Opening today's attendance summary."}
 
         if any(kw in text for kw in ["generate payroll", "show payroll", "open payroll"]):
             return {"action": "navigate", "target": "payroll", "speech": "Opening payroll calculation module."}

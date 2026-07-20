@@ -112,6 +112,13 @@ def create_supplier(data: SupplierCreate, user: dict = Depends(get_current_user)
     db.add(s); db.commit(); db.refresh(s)
     return s
 
+@router.delete("/suppliers/{sup_id}")
+def delete_supplier(sup_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    s = db.query(Supplier).filter(Supplier.id == sup_id, Supplier.company_id == _cid(user)).first()
+    if not s: raise HTTPException(404, "Not found")
+    db.delete(s); db.commit()
+    return {"ok": True}
+
 # ──────────────────────────── Inventory ────────────────────────────
 
 class InventoryCreate(BaseModel):
@@ -133,6 +140,21 @@ def create_inventory(data: InventoryCreate, user: dict = Depends(get_current_use
     db.add(item); db.commit(); db.refresh(item)
     return item
 
+@router.delete("/inventory/{item_id}")
+def delete_inventory(item_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    item = db.query(InventoryItem).filter(InventoryItem.id == item_id, InventoryItem.company_id == _cid(user)).first()
+    if not item: raise HTTPException(404, "Not found")
+    db.delete(item); db.commit()
+    return {"ok": True}
+
+@router.patch("/inventory/{item_id}/stock")
+def update_inventory_stock(item_id: int, quantity: int = Query(...), user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    item = db.query(InventoryItem).filter(InventoryItem.id == item_id, InventoryItem.company_id == _cid(user)).first()
+    if not item: raise HTTPException(404, "Not found")
+    item.quantity = quantity
+    db.commit()
+    return {"ok": True, "quantity": item.quantity}
+
 # ──────────────────────────── Sales ────────────────────────────
 
 class SalesCreate(BaseModel):
@@ -142,7 +164,28 @@ class SalesCreate(BaseModel):
 
 @router.get("/sales")
 def list_sales(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(SalesOrder).filter(SalesOrder.company_id == _cid(user)).order_by(SalesOrder.created_at.desc()).all()
+    cid = _cid(user)
+    rows = (
+        db.query(SalesOrder, Customer.name.label("customer_name"))
+        .outerjoin(Customer, SalesOrder.customer_id == Customer.id)
+        .filter(SalesOrder.company_id == cid)
+        .order_by(SalesOrder.created_at.desc())
+        .all()
+    )
+    result = []
+    for order, cust_name in rows:
+        result.append({
+            "id": order.id,
+            "company_id": order.company_id,
+            "order_number": order.order_number,
+            "customer_id": order.customer_id,
+            "customer_name": cust_name or "General Customer",
+            "total_amount": order.total_amount,
+            "status": order.status,
+            "notes": order.notes,
+            "created_at": order.created_at.isoformat() if order.created_at else ""
+        })
+    return result
 
 @router.post("/sales")
 def create_sale(data: SalesCreate, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -154,6 +197,21 @@ def create_sale(data: SalesCreate, user: dict = Depends(get_current_user), db: S
     db.add(order); db.commit(); db.refresh(order)
     return order
 
+@router.patch("/sales/{order_id}/status")
+def update_sale_status(order_id: int, status: str = Query(...), user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id, SalesOrder.company_id == _cid(user)).first()
+    if not order: raise HTTPException(404, "Not found")
+    order.status = status
+    db.commit()
+    return {"ok": True}
+
+@router.delete("/sales/{order_id}")
+def delete_sale(order_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    order = db.query(SalesOrder).filter(SalesOrder.id == order_id, SalesOrder.company_id == _cid(user)).first()
+    if not order: raise HTTPException(404, "Not found")
+    db.delete(order); db.commit()
+    return {"ok": True}
+
 # ──────────────────────────── Purchases ────────────────────────────
 
 class PurchaseCreate(BaseModel):
@@ -163,7 +221,28 @@ class PurchaseCreate(BaseModel):
 
 @router.get("/purchases")
 def list_purchases(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(PurchaseOrder).filter(PurchaseOrder.company_id == _cid(user)).order_by(PurchaseOrder.created_at.desc()).all()
+    cid = _cid(user)
+    rows = (
+        db.query(PurchaseOrder, Supplier.name.label("supplier_name"))
+        .outerjoin(Supplier, PurchaseOrder.supplier_id == Supplier.id)
+        .filter(PurchaseOrder.company_id == cid)
+        .order_by(PurchaseOrder.created_at.desc())
+        .all()
+    )
+    result = []
+    for order, sup_name in rows:
+        result.append({
+            "id": order.id,
+            "company_id": order.company_id,
+            "order_number": order.order_number,
+            "supplier_id": order.supplier_id,
+            "supplier_name": sup_name or "General Supplier",
+            "total_amount": order.total_amount,
+            "status": order.status,
+            "notes": order.notes,
+            "created_at": order.created_at.isoformat() if order.created_at else ""
+        })
+    return result
 
 @router.post("/purchases")
 def create_purchase(data: PurchaseCreate, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -175,6 +254,21 @@ def create_purchase(data: PurchaseCreate, user: dict = Depends(get_current_user)
     db.add(order); db.commit(); db.refresh(order)
     return order
 
+@router.patch("/purchases/{order_id}/status")
+def update_purchase_status(order_id: int, status: str = Query(...), user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id, PurchaseOrder.company_id == _cid(user)).first()
+    if not order: raise HTTPException(404, "Not found")
+    order.status = status
+    db.commit()
+    return {"ok": True}
+
+@router.delete("/purchases/{order_id}")
+def delete_purchase(order_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    order = db.query(PurchaseOrder).filter(PurchaseOrder.id == order_id, PurchaseOrder.company_id == _cid(user)).first()
+    if not order: raise HTTPException(404, "Not found")
+    db.delete(order); db.commit()
+    return {"ok": True}
+
 # ──────────────────────────── Invoices ────────────────────────────
 
 class InvoiceCreate(BaseModel):
@@ -184,19 +278,60 @@ class InvoiceCreate(BaseModel):
 
 @router.get("/invoices")
 def list_invoices(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(Invoice).filter(Invoice.company_id == _cid(user)).order_by(Invoice.created_at.desc()).all()
+    cid = _cid(user)
+    rows = (
+        db.query(Invoice, Customer.name.label("customer_name"))
+        .outerjoin(Customer, Invoice.customer_id == Customer.id)
+        .filter(Invoice.company_id == cid)
+        .order_by(Invoice.created_at.desc())
+        .all()
+    )
+    result = []
+    for inv, cust_name in rows:
+        result.append({
+            "id": inv.id,
+            "company_id": inv.company_id,
+            "invoice_number": inv.invoice_number,
+            "customer_id": inv.customer_id,
+            "customer_name": cust_name or "Client",
+            "total_amount": inv.total_amount,
+            "paid_amount": inv.paid_amount,
+            "status": inv.status,
+            "due_date": str(inv.due_date) if inv.due_date else "",
+            "created_at": inv.created_at.isoformat() if inv.created_at else ""
+        })
+    return result
 
 @router.post("/invoices")
 def create_invoice(data: InvoiceCreate, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    d_date = datetime.datetime.strptime(data.due_date, "%Y-%m-%d").date() if data.due_date else None
     inv = Invoice(
         company_id=_cid(user),
         invoice_number=_gen_order_number("INV"),
         customer_id=data.customer_id,
         total_amount=data.total_amount,
-        due_date=data.due_date,
+        due_date=d_date,
+        status="unpaid"
     )
     db.add(inv); db.commit(); db.refresh(inv)
     return inv
+
+@router.patch("/invoices/{inv_id}/status")
+def update_invoice_status(inv_id: int, status: str = Query(...), user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    inv = db.query(Invoice).filter(Invoice.id == inv_id, Invoice.company_id == _cid(user)).first()
+    if not inv: raise HTTPException(404, "Not found")
+    inv.status = status
+    if status == "paid":
+        inv.paid_amount = inv.total_amount
+    db.commit()
+    return {"ok": True}
+
+@router.delete("/invoices/{inv_id}")
+def delete_invoice(inv_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    inv = db.query(Invoice).filter(Invoice.id == inv_id, Invoice.company_id == _cid(user)).first()
+    if not inv: raise HTTPException(404, "Not found")
+    db.delete(inv); db.commit()
+    return {"ok": True}
 
 # ──────────────────────────── Employees (Company-scoped) ────────────────────────────
 
@@ -204,11 +339,214 @@ def create_invoice(data: InvoiceCreate, user: dict = Depends(get_current_user), 
 def list_employees(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(Employee).filter(Employee.company_id == _cid(user)).all()
 
+@router.delete("/employees/{emp_id}")
+def delete_employee(emp_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    emp = db.query(Employee).filter(Employee.id == emp_id, Employee.company_id == _cid(user)).first()
+    if not emp: raise HTTPException(404, "Not found")
+    db.delete(emp); db.commit()
+    return {"ok": True}
+
 # ──────────────────────────── Attendance ────────────────────────────
+
+class AttendanceCreate(BaseModel):
+    employee_id: int
+    date: Optional[str] = None
+    status: str = "present"
+    check_in: Optional[str] = None
+    check_out: Optional[str] = None
 
 @router.get("/attendance")
 def list_attendance(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(Attendance).filter(Attendance.company_id == _cid(user)).order_by(Attendance.date.desc()).limit(100).all()
+    cid = _cid(user)
+    rows = (
+        db.query(Attendance, Employee.employee_name, Employee.department, Employee.designation)
+        .outerjoin(Employee, Attendance.employee_id == Employee.id)
+        .filter(Attendance.company_id == cid)
+        .order_by(Attendance.date.desc(), Attendance.id.desc())
+        .limit(200)
+        .all()
+    )
+    result = []
+    for att, emp_name, dept, desig in rows:
+        result.append({
+            "id": att.id,
+            "company_id": att.company_id,
+            "employee_id": att.employee_id,
+            "employee_name": emp_name or f"Employee #{att.employee_id}",
+            "department": dept or "General",
+            "designation": desig or "Staff",
+            "date": str(att.date) if att.date else "",
+            "check_in": att.check_in.strftime("%I:%M %p") if att.check_in else None,
+            "check_out": att.check_out.strftime("%I:%M %p") if att.check_out else None,
+            "status": att.status,
+        })
+    return result
+
+@router.get("/attendance/today-status")
+def get_today_attendance_status(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    cid = _cid(user)
+    today = datetime.date.today()
+    
+    user_emp_id = user.get("employee_id")
+    my_record = None
+    if user_emp_id:
+        rec = db.query(Attendance).filter(
+            Attendance.company_id == cid,
+            Attendance.employee_id == user_emp_id,
+            Attendance.date == today
+        ).first()
+        if rec:
+            my_record = {
+                "id": rec.id,
+                "status": rec.status,
+                "check_in": rec.check_in.strftime("%I:%M %p") if rec.check_in else None,
+                "check_out": rec.check_out.strftime("%I:%M %p") if rec.check_out else None,
+            }
+            
+    present_count = db.query(sqlfunc.count(Attendance.id)).filter(
+        Attendance.company_id == cid, Attendance.date == today, Attendance.status == "present"
+    ).scalar() or 0
+    late_count = db.query(sqlfunc.count(Attendance.id)).filter(
+        Attendance.company_id == cid, Attendance.date == today, Attendance.status == "late"
+    ).scalar() or 0
+    absent_count = db.query(sqlfunc.count(Attendance.id)).filter(
+        Attendance.company_id == cid, Attendance.date == today, Attendance.status == "absent"
+    ).scalar() or 0
+    leave_count = db.query(sqlfunc.count(Attendance.id)).filter(
+        Attendance.company_id == cid, Attendance.date == today, Attendance.status == "leave"
+    ).scalar() or 0
+    total_emp = db.query(sqlfunc.count(Employee.id)).filter(Employee.company_id == cid).scalar() or 0
+
+    return {
+        "date": str(today),
+        "user_name": user.get("employee_name") or "User",
+        "my_status": my_record,
+        "summary": {
+            "total_employees": total_emp,
+            "present": present_count,
+            "late": late_count,
+            "absent": absent_count,
+            "leave": leave_count,
+        }
+    }
+
+@router.post("/attendance/check-in")
+def check_in_employee(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    cid = _cid(user)
+    emp_id = user.get("employee_id")
+    if not emp_id:
+        first_emp = db.query(Employee).filter(Employee.company_id == cid).first()
+        if not first_emp:
+            raise HTTPException(400, "No employee record found for check-in")
+        emp_id = first_emp.id
+
+    today = datetime.date.today()
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    att = db.query(Attendance).filter(
+        Attendance.company_id == cid,
+        Attendance.employee_id == emp_id,
+        Attendance.date == today
+    ).first()
+
+    if not att:
+        att = Attendance(
+            company_id=cid,
+            employee_id=emp_id,
+            date=today,
+            check_in=now,
+            status="present"
+        )
+        db.add(att)
+    else:
+        if not att.check_in:
+            att.check_in = now
+        att.status = "present"
+
+    db.commit()
+    db.refresh(att)
+    return {
+        "ok": True,
+        "message": f"Checked in at {now.strftime('%I:%M %p')}",
+        "check_in": now.strftime("%I:%M %p"),
+        "status": att.status
+    }
+
+@router.post("/attendance/check-out")
+def check_out_employee(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    cid = _cid(user)
+    emp_id = user.get("employee_id")
+    if not emp_id:
+        first_emp = db.query(Employee).filter(Employee.company_id == cid).first()
+        if not first_emp:
+            raise HTTPException(400, "No employee record found for check-out")
+        emp_id = first_emp.id
+
+    today = datetime.date.today()
+    now = datetime.datetime.now(datetime.timezone.utc)
+
+    att = db.query(Attendance).filter(
+        Attendance.company_id == cid,
+        Attendance.employee_id == emp_id,
+        Attendance.date == today
+    ).first()
+
+    if not att:
+        att = Attendance(
+            company_id=cid,
+            employee_id=emp_id,
+            date=today,
+            check_in=now,
+            check_out=now,
+            status="present"
+        )
+        db.add(att)
+    else:
+        att.check_out = now
+
+    db.commit()
+    db.refresh(att)
+    return {
+        "ok": True,
+        "message": f"Checked out at {now.strftime('%I:%M %p')}",
+        "check_out": now.strftime("%I:%M %p"),
+        "status": att.status
+    }
+
+@router.post("/attendance")
+def create_attendance(data: AttendanceCreate, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    cid = _cid(user)
+    att_date = datetime.datetime.strptime(data.date, "%Y-%m-%d").date() if data.date else datetime.date.today()
+    
+    existing = db.query(Attendance).filter(
+        Attendance.company_id == cid,
+        Attendance.employee_id == data.employee_id,
+        Attendance.date == att_date
+    ).first()
+
+    if existing:
+        existing.status = data.status
+        db.commit()
+        db.refresh(existing)
+        return existing
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    att = Attendance(
+        company_id=cid,
+        employee_id=data.employee_id,
+        date=att_date,
+        check_in=now if data.status == "present" else None,
+        status=data.status
+    )
+    db.add(att); db.commit(); db.refresh(att)
+    return att
+
+@router.delete("/attendance/{att_id}")
+def delete_attendance(att_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    att = db.query(Attendance).filter(Attendance.id == att_id, Attendance.company_id == _cid(user)).first()
+    if not att: raise HTTPException(404, "Not found")
+    db.delete(att); db.commit()
+    return {"ok": True}
 
 # ──────────────────────────── Projects ────────────────────────────
 
@@ -227,6 +565,21 @@ def create_project(data: ProjectCreate, user: dict = Depends(get_current_user), 
     db.add(p); db.commit(); db.refresh(p)
     return p
 
+@router.patch("/projects/{proj_id}/status")
+def update_project_status(proj_id: int, status: str = Query(...), user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    p = db.query(Project).filter(Project.id == proj_id, Project.company_id == _cid(user)).first()
+    if not p: raise HTTPException(404, "Not found")
+    p.status = status
+    db.commit()
+    return {"ok": True}
+
+@router.delete("/projects/{proj_id}")
+def delete_project(proj_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    p = db.query(Project).filter(Project.id == proj_id, Project.company_id == _cid(user)).first()
+    if not p: raise HTTPException(404, "Not found")
+    db.delete(p); db.commit()
+    return {"ok": True}
+
 # ──────────────────────────── Tasks ────────────────────────────
 
 class TaskCreate(BaseModel):
@@ -238,7 +591,31 @@ class TaskCreate(BaseModel):
 
 @router.get("/tasks")
 def list_tasks(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(Task).filter(Task.company_id == _cid(user)).order_by(Task.created_at.desc()).all()
+    cid = _cid(user)
+    rows = (
+        db.query(Task, Employee.employee_name, Project.name.label("project_name"))
+        .outerjoin(Employee, Task.assigned_to == Employee.id)
+        .outerjoin(Project, Task.project_id == Project.id)
+        .filter(Task.company_id == cid)
+        .order_by(Task.created_at.desc())
+        .all()
+    )
+    result = []
+    for t, emp_name, proj_name in rows:
+        result.append({
+            "id": t.id,
+            "company_id": t.company_id,
+            "title": t.title,
+            "description": t.description,
+            "priority": t.priority,
+            "status": t.status,
+            "project_id": t.project_id,
+            "project_name": proj_name or "General",
+            "assigned_to": t.assigned_to,
+            "assigned_name": emp_name or "Unassigned",
+            "created_at": t.created_at.isoformat() if t.created_at else ""
+        })
+    return result
 
 @router.post("/tasks")
 def create_task(data: TaskCreate, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -254,6 +631,13 @@ def update_task_status(task_id: int, status: str = Query(...), user: dict = Depe
     db.commit()
     return {"ok": True}
 
+@router.delete("/tasks/{task_id}")
+def delete_task(task_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    t = db.query(Task).filter(Task.id == task_id, Task.company_id == _cid(user)).first()
+    if not t: raise HTTPException(404, "Not found")
+    db.delete(t); db.commit()
+    return {"ok": True}
+
 # ──────────────────────────── Notifications ────────────────────────────
 
 @router.get("/notifications")
@@ -262,6 +646,20 @@ def list_notifications(user: dict = Depends(get_current_user), db: Session = Dep
         Notification.company_id == _cid(user)
     ).order_by(Notification.created_at.desc()).limit(50).all()
 
+@router.patch("/notifications/{notif_id}/read")
+def mark_notification_read(notif_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    n = db.query(Notification).filter(Notification.id == notif_id, Notification.company_id == _cid(user)).first()
+    if not n: raise HTTPException(404, "Not found")
+    n.is_read = True
+    db.commit()
+    return {"ok": True}
+
+@router.delete("/notifications/{notif_id}")
+def delete_notification(notif_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    n = db.query(Notification).filter(Notification.id == notif_id, Notification.company_id == _cid(user)).first()
+    if not n: raise HTTPException(404, "Not found")
+    db.delete(n); db.commit()
+    return {"ok": True}
 
 # ──────────────────────────── Departments ────────────────────────────
 
@@ -279,6 +677,13 @@ def create_department(data: DepartmentCreate, user: dict = Depends(get_current_u
     db.add(d); db.commit(); db.refresh(d)
     return d
 
+@router.delete("/departments/{dept_id}")
+def delete_department(dept_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    d = db.query(Department).filter(Department.id == dept_id, Department.company_id == _cid(user)).first()
+    if not d: raise HTTPException(404, "Not found")
+    db.delete(d); db.commit()
+    return {"ok": True}
+
 # ──────────────────────────── Leaves ────────────────────────────
 
 class LeaveCreate(BaseModel):
@@ -290,7 +695,29 @@ class LeaveCreate(BaseModel):
 
 @router.get("/leaves")
 def list_leaves(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(LeaveRequest).filter(LeaveRequest.company_id == _cid(user)).all()
+    cid = _cid(user)
+    rows = (
+        db.query(LeaveRequest, Employee.employee_name)
+        .outerjoin(Employee, LeaveRequest.employee_id == Employee.id)
+        .filter(LeaveRequest.company_id == cid)
+        .order_by(LeaveRequest.created_at.desc())
+        .all()
+    )
+    result = []
+    for req, emp_name in rows:
+        result.append({
+            "id": req.id,
+            "company_id": req.company_id,
+            "employee_id": req.employee_id,
+            "employee_name": emp_name or f"Employee #{req.employee_id}",
+            "leave_type": req.leave_type,
+            "start_date": str(req.start_date),
+            "end_date": str(req.end_date),
+            "reason": req.reason,
+            "status": req.status,
+            "created_at": req.created_at.isoformat() if req.created_at else ""
+        })
+    return result
 
 @router.post("/leaves")
 def create_leave(data: LeaveCreate, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -316,6 +743,13 @@ def update_leave_status(leave_id: int, status: str = Query(...), user: dict = De
     db.commit()
     return {"ok": True}
 
+@router.delete("/leaves/{leave_id}")
+def delete_leave(leave_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    req = db.query(LeaveRequest).filter(LeaveRequest.id == leave_id, LeaveRequest.company_id == _cid(user)).first()
+    if not req: raise HTTPException(404, "Not found")
+    db.delete(req); db.commit()
+    return {"ok": True}
+
 # ──────────────────────────── Payroll ────────────────────────────
 
 class PayrollCreate(BaseModel):
@@ -327,7 +761,30 @@ class PayrollCreate(BaseModel):
 
 @router.get("/payroll")
 def list_payroll(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    return db.query(Payroll).filter(Payroll.company_id == _cid(user)).all()
+    cid = _cid(user)
+    rows = (
+        db.query(Payroll, Employee.employee_name)
+        .outerjoin(Employee, Payroll.employee_id == Employee.id)
+        .filter(Payroll.company_id == cid)
+        .order_by(Payroll.created_at.desc())
+        .all()
+    )
+    result = []
+    for pay, emp_name in rows:
+        result.append({
+            "id": pay.id,
+            "company_id": pay.company_id,
+            "employee_id": pay.employee_id,
+            "employee_name": emp_name or f"Employee #{pay.employee_id}",
+            "month": pay.month,
+            "basic_salary": pay.basic_salary,
+            "allowances": pay.allowances,
+            "deductions": pay.deductions,
+            "net_salary": pay.net_salary,
+            "status": pay.status,
+            "created_at": pay.created_at.isoformat() if pay.created_at else ""
+        })
+    return result
 
 @router.post("/payroll")
 def create_payroll(data: PayrollCreate, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -340,10 +797,25 @@ def create_payroll(data: PayrollCreate, user: dict = Depends(get_current_user), 
         allowances=data.allowances,
         deductions=data.deductions,
         net_salary=net,
-        status="paid"
+        status="processed"
     )
     db.add(pay); db.commit(); db.refresh(pay)
     return pay
+
+@router.patch("/payroll/{pay_id}/status")
+def update_payroll_status(pay_id: int, status: str = Query(...), user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    pay = db.query(Payroll).filter(Payroll.id == pay_id, Payroll.company_id == _cid(user)).first()
+    if not pay: raise HTTPException(404, "Not found")
+    pay.status = status
+    db.commit()
+    return {"ok": True}
+
+@router.delete("/payroll/{pay_id}")
+def delete_payroll(pay_id: int, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    pay = db.query(Payroll).filter(Payroll.id == pay_id, Payroll.company_id == _cid(user)).first()
+    if not pay: raise HTTPException(404, "Not found")
+    db.delete(pay); db.commit()
+    return {"ok": True}
 
 # ──────────────────────────── Settings ────────────────────────────
 

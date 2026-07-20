@@ -246,282 +246,158 @@ async function loadModule(module) {
     const target = document.getElementById('workspace-content');
     target.innerHTML = '<div class="skeleton skeleton-card mb-3"></div><div class="skeleton skeleton-card"></div>';
     try {
-        if (module === 'dashboard') {
-            return renderDashboard(await api('/erp/dashboard'));
-        }
-        if (module === 'settings') {
-            return renderSettings(await api('/erp/settings'));
-        }
-        if (module === 'reports') {
-            return renderReports(await api('/erp/reports'));
-        }
+        if (module === 'dashboard') return renderDashboard(await api('/erp/dashboard'));
+        if (module === 'settings') return renderSettings(await api('/erp/settings'));
+        if (module === 'reports') return renderReports(await api('/erp/reports'));
+        if (module === 'attendance') return renderAttendanceModule();
         const records = await api(`/erp/${module}`);
-        renderRecords(module, records);
+        renderModuleTable(module, records);
     } catch (error) {
         target.innerHTML = `<div class="alert alert-danger">${escapeHtml(error.message)}</div>`;
     }
 }
 
-function renderReports(data) {
-    const summary = data.summary || {};
-    document.getElementById('workspace-content').innerHTML = `
+// ──────────── Currency & Status Helpers ────────────
+function fmtCurrency(v) {
+    return (v || 0).toLocaleString('en-IN', { style: 'currency', currency: 'INR' });
+}
+function statusBadge(status) {
+    const map = {
+        present: 'bg-success', active: 'bg-success', paid: 'bg-success', approved: 'bg-success', delivered: 'bg-success', completed: 'bg-success', done: 'bg-success',
+        pending: 'bg-warning text-dark', todo: 'bg-warning text-dark', unpaid: 'bg-danger', absent: 'bg-danger', rejected: 'bg-danger', cancelled: 'bg-danger',
+        late: 'bg-orange', half_day: 'bg-info', leave: 'bg-info', partial: 'bg-info', in_progress: 'bg-primary', review: 'bg-info',
+        confirmed: 'bg-primary', shipped: 'bg-info', processed: 'bg-primary', on_hold: 'bg-secondary'
+    };
+    const cls = map[(status || '').toLowerCase()] || 'bg-secondary';
+    return `<span class="badge ${cls} status-pill">${escapeHtml((status || '—').replace(/_/g, ' '))}</span>`;
+}
+
+// ──────────── Attendance Module (Full) ────────────
+async function renderAttendanceModule() {
+    const target = document.getElementById('workspace-content');
+    target.innerHTML = '<div class="skeleton skeleton-card mb-3"></div><div class="skeleton skeleton-card"></div>';
+    
+    let todayData = null;
+    let records = [];
+    try {
+        [todayData, records] = await Promise.all([
+            api('/erp/attendance/today-status'),
+            api('/erp/attendance')
+        ]);
+    } catch (err) {
+        target.innerHTML = `<div class="alert alert-danger">${escapeHtml(err.message)}</div>`;
+        return;
+    }
+
+    const myStatus = todayData.my_status;
+    const summary = todayData.summary || {};
+    const checkedIn = myStatus && myStatus.check_in;
+    const checkedOut = myStatus && myStatus.check_out;
+
+    target.innerHTML = `
         <div class="page-header">
             <div>
-                <h2>Reports & Analytics</h2>
-                <p class="text-muted mb-0">Executive reports and data export center.</p>
+                <h2>Attendance</h2>
+                <p class="text-muted mb-0">Track daily employee attendance and manage check-ins.</p>
             </div>
-            <div class="d-flex gap-2">
-                <button class="btn btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print Report</button>
-                <button class="btn btn-primary" onclick="exportReportsCsv()"><i class="bi bi-download me-1"></i>Export CSV Summary</button>
-            </div>
+            <button class="btn btn-primary" onclick="showAddForm('attendance')"><i class="bi bi-plus-lg me-1"></i>Mark Attendance</button>
         </div>
 
-        <div class="row g-3 mb-4">
-            <div class="col-sm-6 col-xl-3">
-                <div class="card stat-card h-100">
-                    <div class="card-body">
-                        <h6 class="text-muted">Total Revenue</h6>
-                        <div class="stat-value text-success">${summary.total_revenue?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) || '₹0.00'}</div>
-                        <small class="text-muted">From Sales Orders</small>
+        <!-- Punch Card Banner -->
+        <div class="card attendance-punch-card mb-4">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-4">
+                        <div class="d-flex align-items-center gap-3">
+                            <div class="punch-avatar"><i class="bi bi-person-badge fs-2"></i></div>
+                            <div>
+                                <h5 class="mb-0">${escapeHtml(todayData.user_name || 'User')}</h5>
+                                <small class="text-muted">${todayData.date || 'Today'}</small>
+                                ${checkedIn ? `<div class="mt-1"><span class="badge bg-success-subtle text-success"><i class="bi bi-check-circle me-1"></i>In at ${escapeHtml(myStatus.check_in)}</span></div>` : ''}
+                                ${checkedOut ? `<div class="mt-1"><span class="badge bg-info-subtle text-info"><i class="bi bi-box-arrow-right me-1"></i>Out at ${escapeHtml(myStatus.check_out)}</span></div>` : ''}
+                            </div>
+                        </div>
                     </div>
-                </div>
-            </div>
-            <div class="col-sm-6 col-xl-3">
-                <div class="card stat-card h-100">
-                    <div class="card-body">
-                        <h6 class="text-muted">Total Expenses</h6>
-                        <div class="stat-value text-danger">${summary.total_expenses?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) || '₹0.00'}</div>
-                        <small class="text-muted">Purchases & Payroll</small>
+                    <div class="col-md-4 text-center my-3 my-md-0">
+                        <div class="d-flex gap-2 justify-content-center">
+                            <button class="btn ${checkedIn ? 'btn-outline-success' : 'btn-success'} btn-lg px-4" onclick="doCheckIn()" ${checkedIn ? 'disabled' : ''}>
+                                <i class="bi bi-box-arrow-in-right me-1"></i>${checkedIn ? 'Checked In ✓' : 'Check In'}
+                            </button>
+                            <button class="btn ${checkedOut ? 'btn-outline-info' : 'btn-info'} btn-lg px-4" onclick="doCheckOut()" ${checkedOut ? 'disabled' : ''}>
+                                <i class="bi bi-box-arrow-right me-1"></i>${checkedOut ? 'Checked Out ✓' : 'Check Out'}
+                            </button>
+                        </div>
                     </div>
-                </div>
-            </div>
-            <div class="col-sm-6 col-xl-3">
-                <div class="card stat-card h-100">
-                    <div class="card-body">
-                        <h6 class="text-muted">Net Profit</h6>
-                        <div class="stat-value ${summary.net_profit >= 0 ? 'text-primary' : 'text-warning'}">${summary.net_profit?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) || '₹0.00'}</div>
-                        <small class="text-muted">Net Operating Profit</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-sm-6 col-xl-3">
-                <div class="card stat-card h-100">
-                    <div class="card-body">
-                        <h6 class="text-muted">Inventory Valuation</h6>
-                        <div class="stat-value text-info">${summary.inventory_valuation?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) || '₹0.00'}</div>
-                        <small class="text-muted">Total Asset Value</small>
+                    <div class="col-md-4">
+                        <div class="row g-2 text-center">
+                            <div class="col-3"><div class="attendance-stat"><span class="fs-4 fw-bold text-success">${summary.present || 0}</span><small class="d-block text-muted">Present</small></div></div>
+                            <div class="col-3"><div class="attendance-stat"><span class="fs-4 fw-bold text-danger">${summary.absent || 0}</span><small class="d-block text-muted">Absent</small></div></div>
+                            <div class="col-3"><div class="attendance-stat"><span class="fs-4 fw-bold text-warning">${summary.late || 0}</span><small class="d-block text-muted">Late</small></div></div>
+                            <div class="col-3"><div class="attendance-stat"><span class="fs-4 fw-bold text-info">${summary.leave || 0}</span><small class="d-block text-muted">Leave</small></div></div>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="card p-4 mb-4">
-            <h5 class="mb-3">Detailed Module Metrics</h5>
+        <div id="add-form-container" class="card mb-4 p-4 d-none"></div>
+        
+        <div class="card">
             <div class="table-responsive">
-                <table class="table table-hover align-middle">
+                <table class="table table-hover mb-0 align-middle">
                     <thead>
                         <tr>
-                            <th>Report Category</th>
-                            <th>Key Metric 1</th>
-                            <th>Key Metric 2</th>
-                            <th>Action</th>
+                            <th>Employee</th>
+                            <th>Department</th>
+                            <th>Date</th>
+                            <th>Check In</th>
+                            <th>Check Out</th>
+                            <th>Status</th>
+                            <th class="text-end">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        <tr>
-                            <td><strong>Sales Report</strong></td>
-                            <td>Total Orders: ${data.sales?.total_orders || 0}</td>
-                            <td>Revenue: ₹${data.sales?.total_amount || 0}</td>
-                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Sales', [['Total Orders', '${data.sales?.total_orders}'], ['Total Revenue', '₹${data.sales?.total_amount}']])">Export Sales CSV</button></td>
-                        </tr>
-                        <tr>
-                            <td><strong>Purchases Report</strong></td>
-                            <td>Purchase Orders: ${data.purchases?.total_orders || 0}</td>
-                            <td>Expenses: ₹${data.purchases?.total_amount || 0}</td>
-                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Purchases', [['Total Orders', '${data.purchases?.total_orders}'], ['Total Expenses', '₹${data.purchases?.total_amount}']])">Export Purchases CSV</button></td>
-                        </tr>
-                        <tr>
-                            <td><strong>Payroll Report</strong></td>
-                            <td>Total Salary Payout: ₹${data.payroll?.total_payout || 0}</td>
-                            <td>Status: Calculated</td>
-                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Payroll', [['Total Payout', '₹${data.payroll?.total_payout}']])">Export Payroll CSV</button></td>
-                        </tr>
-                        <tr>
-                            <td><strong>Inventory Report</strong></td>
-                            <td>Item SKUs: ${data.inventory?.item_types || 0}</td>
-                            <td>Total Valuation: ₹${data.inventory?.valuation || 0}</td>
-                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Inventory', [['Item SKUs', '${data.inventory?.item_types}'], ['Valuation', '₹${data.inventory?.valuation}']])">Export Inventory CSV</button></td>
-                        </tr>
-                        <tr>
-                            <td><strong>CRM (Customers & Suppliers)</strong></td>
-                            <td>Customers: ${data.crm?.customers || 0}</td>
-                            <td>Suppliers: ${data.crm?.suppliers || 0}</td>
-                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('CRM', [['Customers', '${data.crm?.customers}'], ['Suppliers', '${data.crm?.suppliers}']])">Export CRM CSV</button></td>
-                        </tr>
-                        <tr>
-                            <td><strong>Attendance Report</strong></td>
-                            <td>Present: ${data.attendance?.present || 0}</td>
-                            <td>Absent: ${data.attendance?.absent || 0}</td>
-                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Attendance', [['Present', '${data.attendance?.present}'], ['Absent', '${data.attendance?.absent}']])">Export Attendance CSV</button></td>
-                        </tr>
+                        ${records.length ? records.map(r => `
+                            <tr>
+                                <td><strong>${escapeHtml(r.employee_name)}</strong></td>
+                                <td>${escapeHtml(r.department || '—')}</td>
+                                <td>${escapeHtml(r.date)}</td>
+                                <td>${r.check_in ? `<span class="text-success"><i class="bi bi-clock me-1"></i>${escapeHtml(r.check_in)}</span>` : '<span class="text-muted">—</span>'}</td>
+                                <td>${r.check_out ? `<span class="text-info"><i class="bi bi-clock me-1"></i>${escapeHtml(r.check_out)}</span>` : '<span class="text-muted">—</span>'}</td>
+                                <td>${statusBadge(r.status)}</td>
+                                <td class="text-end">
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteRecord('attendance', ${r.id})"><i class="bi bi-trash"></i></button>
+                                </td>
+                            </tr>
+                        `).join('') : '<tr><td colspan="7" class="text-center text-muted p-5">No attendance records yet. Use the Check In button or add records manually.</td></tr>'}
                     </tbody>
                 </table>
             </div>
         </div>`;
-    window.lastReportData = data;
 }
 
-function exportCategoryCsv(category, rows) {
-    let csvContent = "data:text/csv;charset=utf-8," + `Metric,Value\n` + rows.map(e => e.join(",")).join("\n");
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement("a");
-    link.setAttribute("href", encodedUri);
-    link.setAttribute("download", `${category.toLowerCase()}_report.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    showToast(`${category} CSV report downloaded`, 'success');
+async function doCheckIn() {
+    try {
+        const result = await api('/erp/attendance/check-in', { method: 'POST', body: {} });
+        showToast(result.message || 'Checked in successfully!', 'success');
+        renderAttendanceModule();
+    } catch (err) { showToast(err.message, 'error'); }
+}
+async function doCheckOut() {
+    try {
+        const result = await api('/erp/attendance/check-out', { method: 'POST', body: {} });
+        showToast(result.message || 'Checked out successfully!', 'success');
+        renderAttendanceModule();
+    } catch (err) { showToast(err.message, 'error'); }
 }
 
-function exportReportsCsv() {
-    if (!window.lastReportData) return showToast('No report data available to export', 'error');
-    const d = window.lastReportData.summary || {};
-    const rows = [
-        ["Report", "Executive ERP Summary"],
-        ["Total Revenue", d.total_revenue || 0],
-        ["Total Expenses", d.total_expenses || 0],
-        ["Net Profit", d.net_profit || 0],
-        ["Inventory Valuation", d.inventory_valuation || 0]
-    ];
-    exportCategoryCsv("Executive_Summary", rows);
-}
-
-function renderDashboard(data) {
-    document.getElementById('workspace-content').innerHTML = `
-        <div class="page-header">
-            <div>
-                <h2>Dashboard</h2>
-                <p class="text-muted mb-0">A real-time view of your business.</p>
-            </div>
-        </div>
-        <div class="row g-3">
-            ${[
-                ['Revenue', data.revenue, 'currency-dollar'],
-                ['Expenses', data.expenses, 'wallet2'],
-                ['Profit', data.profit, 'graph-up'],
-                ['Employees', data.total_employees, 'people'],
-                ['Customers', data.total_customers, 'person-heart'],
-                ['Inventory Items', data.total_inventory, 'boxes'],
-                ['Pending Invoices', data.pending_invoices, 'receipt'],
-                ['Open Tasks', data.pending_tasks, 'check2-square']
-            ].map(([label, value, icon]) => `
-                <div class="col-sm-6 col-xl-3">
-                    <div class="card stat-card h-100">
-                        <div class="card-body d-flex justify-content-between">
-                            <div>
-                                <h6>${label}</h6>
-                                <div class="stat-value">${typeof value === 'number' && ['Revenue', 'Expenses', 'Profit'].includes(label) ? value.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) : value}</div>
-                            </div>
-                            <div class="stat-icon bg-primary-subtle text-primary">
-                                <i class="bi bi-${icon}"></i>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `).join('')}
-        </div>
-        
-        <div class="row g-3 mt-3">
-            <div class="col-md-6">
-                <div class="card p-3">
-                    <h5>Monthly Overview</h5>
-                    <canvas id="overviewChart"></canvas>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="card p-3">
-                    <h5>Quick Actions</h5>
-                    <div class="d-grid gap-2">
-                        <button class="btn btn-primary text-start" onclick="loadModule('customers')"><i class="bi bi-person-plus me-2"></i>Add Customer</button>
-                        <button class="btn btn-outline-primary text-start" onclick="loadModule('inventory')"><i class="bi bi-box-seam me-2"></i>Manage Inventory</button>
-                        <button class="btn btn-outline-secondary text-start" onclick="loadModule('tasks')"><i class="bi bi-check2-square me-2"></i>Assign Tasks</button>
-                    </div>
-                </div>
-            </div>
-        </div>
-        
-        <div class="card mt-4">
-            <div class="card-body">
-                <h5 class="mb-1">AI Assistant is active</h5>
-                <p class="text-muted mb-0">Click the floating microphone button to speak commands like: "show inventory", "open crm", "create task finish report", etc.</p>
-            </div>
-        </div>`;
-        
-    // Build Chart.js Graph
-    const ctx = document.getElementById('overviewChart')?.getContext('2d');
-    if (ctx) {
-        new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: ['Revenue', 'Expenses', 'Profit'],
-                datasets: [{
-                    label: 'Financial Performance (₹)',
-                    data: [data.revenue, data.expenses, data.profit],
-                    backgroundColor: ['rgba(99, 102, 241, 0.8)', 'rgba(239, 68, 68, 0.8)', 'rgba(16, 185, 129, 0.8)']
-                }]
-            },
-            options: { responsive: true, scales: { y: { beginAtZero: true } } }
-        });
-    }
-}
-
-function renderSettings(data) {
-    const session = getSession();
-    document.getElementById('workspace-content').innerHTML = `
-        <div class="page-header">
-            <div>
-                <h2>Settings</h2>
-                <p class="text-muted mb-0">Manage workspace options.</p>
-            </div>
-        </div>
-        <div class="card p-4">
-            <h5>Workspace Details</h5>
-            <div class="mb-3">
-                <label class="form-label">Company Code</label>
-                <div class="input-group">
-                    <input class="form-control font-mono" value="${escapeHtml(session.companyCode)}" readonly>
-                    <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText('${session.companyCode}'); showToast('Code copied!', 'success');">Copy</button>
-                </div>
-                <div class="form-text">Share this code with employees so they can join.</div>
-            </div>
-            
-            <hr>
-            
-            <h5>Preferences</h5>
-            <form id="settings-form">
-                <div class="form-check form-switch mb-3">
-                    <input class="form-check-input" type="checkbox" id="voiceToggle" checked>
-                    <label class="form-check-label" for="voiceToggle">Enable speech synthesis responses</label>
-                </div>
-                <button type="submit" class="btn btn-primary">Save Settings</button>
-            </form>
-        </div>`;
-    document.getElementById('settings-form').addEventListener('submit', event => {
-        event.preventDefault();
-        showToast('Settings saved successfully', 'success');
-    });
-}
-
-function renderRecords(module, records) {
+// ──────────── Generic Professional Module Table Renderer ────────────
+function renderModuleTable(module, records) {
     const title = module[0].toUpperCase() + module.slice(1);
-    const headings = records[0] ? Object.keys(records[0]).filter(key => !['company_id', 'id'].includes(key)).slice(0, 6) : [];
-    
-    const rows = records.map(record => `
-        <tr>
-            ${Object.entries(record).filter(([key]) => !['company_id', 'id'].includes(key)).slice(0, 6).map(([, value]) => `<td>${escapeHtml(value ?? '—')}</td>`).join('')}
-        </tr>`).join('');
+    const target = document.getElementById('workspace-content');
+    const tableHtml = getModuleTableHtml(module, records);
 
-    document.getElementById('workspace-content').innerHTML = `
+    target.innerHTML = `
         <div class="page-header">
             <div>
                 <h2>${title}</h2>
@@ -529,27 +405,253 @@ function renderRecords(module, records) {
             </div>
             ${module !== 'notifications' ? `<button class="btn btn-primary" onclick="showAddForm('${module}')"><i class="bi bi-plus-lg me-1"></i>Add ${title.slice(0, -1) || title}</button>` : ''}
         </div>
-        
-        <div id="add-form-container" class="card mb-4 p-4 d-none">
-            <!-- Dynamic form inserts here -->
-        </div>
+
+        <div id="add-form-container" class="card mb-4 p-4 d-none"></div>
         
         <div class="card">
             <div class="table-responsive">
-                <table class="table table-hover mb-0">
-                    <thead>
-                        <tr>
-                            ${headings.map(key => `<th>${escapeHtml(key.replaceAll('_', ' '))}</th>`).join('')}
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rows || `<tr><td colspan="${Math.max(headings.length, 1)}" class="text-center text-muted p-5">No ${escapeHtml(module)} yet.</td></tr>`}
-                    </tbody>
+                <table class="table table-hover mb-0 align-middle">
+                    ${tableHtml}
                 </table>
             </div>
         </div>`;
 }
 
+function getModuleTableHtml(module, records) {
+    if (!records.length) return `<tbody><tr><td colspan="8" class="text-center text-muted p-5">No ${module} records yet. Click "Add" to create your first record.</td></tr></tbody>`;
+
+    if (module === 'employees') {
+        return `<thead><tr><th>Name</th><th>Email</th><th>Mobile</th><th>Department</th><th>Designation</th><th>Role</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr>
+            <td><strong>${escapeHtml(r.employee_name)}</strong></td>
+            <td>${escapeHtml(r.employee_email || '—')}</td>
+            <td>${escapeHtml(r.mobile_number || '—')}</td>
+            <td>${escapeHtml(r.department || '—')}</td>
+            <td>${escapeHtml(r.designation || '—')}</td>
+            <td>${statusBadge(r.role || 'employee')}</td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deleteRecord('employees', ${r.id})"><i class="bi bi-trash"></i></button></td>
+        </tr>`).join('')}</tbody>`;
+    }
+    if (module === 'customers') {
+        return `<thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Address</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr>
+            <td><strong>${escapeHtml(r.name)}</strong></td>
+            <td>${escapeHtml(r.email || '—')}</td>
+            <td>${escapeHtml(r.phone || '—')}</td>
+            <td>${escapeHtml(r.address || '—')}</td>
+            <td>${statusBadge(r.is_active !== false ? 'active' : 'inactive')}</td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deleteRecord('customers', ${r.id})"><i class="bi bi-trash"></i></button></td>
+        </tr>`).join('')}</tbody>`;
+    }
+    if (module === 'suppliers') {
+        return `<thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Address</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr>
+            <td><strong>${escapeHtml(r.name)}</strong></td>
+            <td>${escapeHtml(r.email || '—')}</td>
+            <td>${escapeHtml(r.phone || '—')}</td>
+            <td>${escapeHtml(r.address || '—')}</td>
+            <td>${statusBadge(r.is_active !== false ? 'active' : 'inactive')}</td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deleteRecord('suppliers', ${r.id})"><i class="bi bi-trash"></i></button></td>
+        </tr>`).join('')}</tbody>`;
+    }
+    if (module === 'inventory') {
+        return `<thead><tr><th>Item</th><th>SKU</th><th>Category</th><th>Qty</th><th>Unit Price</th><th>Warehouse</th><th>Value</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr>
+            <td><strong>${escapeHtml(r.name)}</strong></td>
+            <td><code>${escapeHtml(r.sku || '—')}</code></td>
+            <td>${escapeHtml(r.category || '—')}</td>
+            <td>${r.quantity <= (r.reorder_level || 10) ? `<span class="text-danger fw-bold">${r.quantity} ⚠</span>` : r.quantity}</td>
+            <td>${fmtCurrency(r.unit_price)}</td>
+            <td>${escapeHtml(r.warehouse || 'Main')}</td>
+            <td class="fw-semibold">${fmtCurrency((r.quantity || 0) * (r.unit_price || 0))}</td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deleteRecord('inventory', ${r.id})"><i class="bi bi-trash"></i></button></td>
+        </tr>`).join('')}</tbody>`;
+    }
+    if (module === 'sales') {
+        return `<thead><tr><th>Order #</th><th>Customer</th><th>Amount</th><th>Status</th><th>Date</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr>
+            <td><code>${escapeHtml(r.order_number)}</code></td>
+            <td><strong>${escapeHtml(r.customer_name || '—')}</strong></td>
+            <td class="fw-semibold text-success">${fmtCurrency(r.total_amount)}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td>${r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '—'}</td>
+            <td class="text-end">
+                <div class="btn-group btn-group-sm">
+                    ${r.status === 'pending' ? `<button class="btn btn-outline-success" onclick="updateRecordStatus('sales', ${r.id}, 'confirmed')">Confirm</button>` : ''}
+                    ${r.status === 'confirmed' ? `<button class="btn btn-outline-primary" onclick="updateRecordStatus('sales', ${r.id}, 'shipped')">Ship</button>` : ''}
+                    ${r.status === 'shipped' ? `<button class="btn btn-outline-success" onclick="updateRecordStatus('sales', ${r.id}, 'delivered')">Deliver</button>` : ''}
+                    <button class="btn btn-outline-danger" onclick="deleteRecord('sales', ${r.id})"><i class="bi bi-trash"></i></button>
+                </div>
+            </td>
+        </tr>`).join('')}</tbody>`;
+    }
+    if (module === 'purchases') {
+        return `<thead><tr><th>Order #</th><th>Supplier</th><th>Amount</th><th>Status</th><th>Date</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr>
+            <td><code>${escapeHtml(r.order_number)}</code></td>
+            <td><strong>${escapeHtml(r.supplier_name || '—')}</strong></td>
+            <td class="fw-semibold text-danger">${fmtCurrency(r.total_amount)}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td>${r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '—'}</td>
+            <td class="text-end">
+                <div class="btn-group btn-group-sm">
+                    ${r.status === 'pending' ? `<button class="btn btn-outline-success" onclick="updateRecordStatus('purchases', ${r.id}, 'confirmed')">Confirm</button>` : ''}
+                    ${r.status === 'confirmed' ? `<button class="btn btn-outline-primary" onclick="updateRecordStatus('purchases', ${r.id}, 'delivered')">Deliver</button>` : ''}
+                    <button class="btn btn-outline-danger" onclick="deleteRecord('purchases', ${r.id})"><i class="bi bi-trash"></i></button>
+                </div>
+            </td>
+        </tr>`).join('')}</tbody>`;
+    }
+    if (module === 'invoices') {
+        return `<thead><tr><th>Invoice #</th><th>Customer</th><th>Total</th><th>Paid</th><th>Due Date</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr>
+            <td><code>${escapeHtml(r.invoice_number)}</code></td>
+            <td><strong>${escapeHtml(r.customer_name || '—')}</strong></td>
+            <td class="fw-semibold">${fmtCurrency(r.total_amount)}</td>
+            <td>${fmtCurrency(r.paid_amount)}</td>
+            <td>${escapeHtml(r.due_date || '—')}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td class="text-end">
+                <div class="btn-group btn-group-sm">
+                    ${r.status === 'unpaid' ? `<button class="btn btn-outline-success" onclick="updateRecordStatus('invoices', ${r.id}, 'paid')"><i class="bi bi-check2 me-1"></i>Mark Paid</button>` : ''}
+                    ${r.status === 'unpaid' ? `<button class="btn btn-outline-warning" onclick="updateRecordStatus('invoices', ${r.id}, 'partial')">Partial</button>` : ''}
+                    <button class="btn btn-outline-danger" onclick="deleteRecord('invoices', ${r.id})"><i class="bi bi-trash"></i></button>
+                </div>
+            </td>
+        </tr>`).join('')}</tbody>`;
+    }
+    if (module === 'departments') {
+        return `<thead><tr><th>Department</th><th>Description</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr>
+            <td><strong>${escapeHtml(r.name)}</strong></td>
+            <td>${escapeHtml(r.description || '—')}</td>
+            <td class="text-end"><button class="btn btn-sm btn-outline-danger" onclick="deleteRecord('departments', ${r.id})"><i class="bi bi-trash"></i></button></td>
+        </tr>`).join('')}</tbody>`;
+    }
+    if (module === 'leaves') {
+        return `<thead><tr><th>Employee</th><th>Type</th><th>From</th><th>To</th><th>Reason</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr>
+            <td><strong>${escapeHtml(r.employee_name || '—')}</strong></td>
+            <td><span class="badge bg-secondary-subtle text-secondary-emphasis">${escapeHtml(r.leave_type)}</span></td>
+            <td>${escapeHtml(r.start_date)}</td>
+            <td>${escapeHtml(r.end_date)}</td>
+            <td>${escapeHtml(r.reason || '—')}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td class="text-end">
+                <div class="btn-group btn-group-sm">
+                    ${r.status === 'pending' ? `<button class="btn btn-outline-success" onclick="updateRecordStatus('leaves', ${r.id}, 'approved')">Approve</button>` : ''}
+                    ${r.status === 'pending' ? `<button class="btn btn-outline-danger" onclick="updateRecordStatus('leaves', ${r.id}, 'rejected')">Reject</button>` : ''}
+                    <button class="btn btn-outline-danger" onclick="deleteRecord('leaves', ${r.id})"><i class="bi bi-trash"></i></button>
+                </div>
+            </td>
+        </tr>`).join('')}</tbody>`;
+    }
+    if (module === 'payroll') {
+        return `<thead><tr><th>Employee</th><th>Month</th><th>Basic</th><th>Allowances</th><th>Deductions</th><th>Net Salary</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr>
+            <td><strong>${escapeHtml(r.employee_name || '—')}</strong></td>
+            <td>${escapeHtml(r.month)}</td>
+            <td>${fmtCurrency(r.basic_salary)}</td>
+            <td class="text-success">${fmtCurrency(r.allowances)}</td>
+            <td class="text-danger">${fmtCurrency(r.deductions)}</td>
+            <td class="fw-bold">${fmtCurrency(r.net_salary)}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td class="text-end">
+                <div class="btn-group btn-group-sm">
+                    ${r.status === 'processed' ? `<button class="btn btn-outline-success" onclick="updateRecordStatus('payroll', ${r.id}, 'paid')">Mark Paid</button>` : ''}
+                    ${r.status === 'pending' ? `<button class="btn btn-outline-primary" onclick="updateRecordStatus('payroll', ${r.id}, 'processed')">Process</button>` : ''}
+                    <button class="btn btn-outline-danger" onclick="deleteRecord('payroll', ${r.id})"><i class="bi bi-trash"></i></button>
+                </div>
+            </td>
+        </tr>`).join('')}</tbody>`;
+    }
+    if (module === 'projects') {
+        return `<thead><tr><th>Project</th><th>Description</th><th>Budget</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr>
+            <td><strong>${escapeHtml(r.name)}</strong></td>
+            <td>${escapeHtml(r.description || '—')}</td>
+            <td>${fmtCurrency(r.budget)}</td>
+            <td>${statusBadge(r.status)}</td>
+            <td class="text-end">
+                <div class="btn-group btn-group-sm">
+                    ${r.status === 'active' ? `<button class="btn btn-outline-success" onclick="updateRecordStatus('projects', ${r.id}, 'completed')">Complete</button>` : ''}
+                    ${r.status === 'active' ? `<button class="btn btn-outline-warning" onclick="updateRecordStatus('projects', ${r.id}, 'on_hold')">Hold</button>` : ''}
+                    <button class="btn btn-outline-danger" onclick="deleteRecord('projects', ${r.id})"><i class="bi bi-trash"></i></button>
+                </div>
+            </td>
+        </tr>`).join('')}</tbody>`;
+    }
+    if (module === 'tasks') {
+        return `<thead><tr><th>Task</th><th>Assigned To</th><th>Project</th><th>Priority</th><th>Status</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => {
+            const prioColor = {low:'text-muted',medium:'text-primary',high:'text-warning',urgent:'text-danger'}[r.priority] || '';
+            return `<tr>
+            <td><strong>${escapeHtml(r.title)}</strong>${r.description ? `<br><small class="text-muted">${escapeHtml(r.description.slice(0,50))}</small>` : ''}</td>
+            <td>${escapeHtml(r.assigned_name || '—')}</td>
+            <td>${escapeHtml(r.project_name || '—')}</td>
+            <td><span class="${prioColor} fw-semibold text-capitalize">${escapeHtml(r.priority)}</span></td>
+            <td>${statusBadge(r.status)}</td>
+            <td class="text-end">
+                <div class="btn-group btn-group-sm">
+                    ${r.status === 'todo' ? `<button class="btn btn-outline-primary" onclick="updateRecordStatus('tasks', ${r.id}, 'in_progress')">Start</button>` : ''}
+                    ${r.status === 'in_progress' ? `<button class="btn btn-outline-info" onclick="updateRecordStatus('tasks', ${r.id}, 'review')">Review</button>` : ''}
+                    ${r.status === 'review' ? `<button class="btn btn-outline-success" onclick="updateRecordStatus('tasks', ${r.id}, 'done')">Done</button>` : ''}
+                    <button class="btn btn-outline-danger" onclick="deleteRecord('tasks', ${r.id})"><i class="bi bi-trash"></i></button>
+                </div>
+            </td>
+        </tr>`}).join('')}</tbody>`;
+    }
+    if (module === 'notifications') {
+        return `<thead><tr><th>Title</th><th>Message</th><th>Type</th><th>Read</th><th>Date</th><th class="text-end">Actions</th></tr></thead>
+        <tbody>${records.map(r => `<tr class="${r.is_read ? '' : 'table-active'}">
+            <td><strong>${escapeHtml(r.title)}</strong></td>
+            <td>${escapeHtml(r.message || '—')}</td>
+            <td>${statusBadge(r.notification_type || 'info')}</td>
+            <td>${r.is_read ? '<span class="text-muted">Read</span>' : '<span class="text-primary fw-semibold">Unread</span>'}</td>
+            <td>${r.created_at ? new Date(r.created_at).toLocaleDateString('en-IN') : '—'}</td>
+            <td class="text-end">
+                <div class="btn-group btn-group-sm">
+                    ${!r.is_read ? `<button class="btn btn-outline-primary" onclick="markNotificationRead(${r.id})">Mark Read</button>` : ''}
+                    <button class="btn btn-outline-danger" onclick="deleteRecord('notifications', ${r.id})"><i class="bi bi-trash"></i></button>
+                </div>
+            </td>
+        </tr>`).join('')}</tbody>`;
+    }
+
+    // Fallback generic renderer
+    const headings = records[0] ? Object.keys(records[0]).filter(key => !['company_id', 'id'].includes(key)).slice(0, 6) : [];
+    return `<thead><tr>${headings.map(key => `<th>${escapeHtml(key.replaceAll('_', ' '))}</th>`).join('')}</tr></thead>
+    <tbody>${records.map(record => `<tr>${Object.entries(record).filter(([key]) => !['company_id', 'id'].includes(key)).slice(0, 6).map(([, value]) => `<td>${escapeHtml(value ?? '—')}</td>`).join('')}</tr>`).join('')}</tbody>`;
+}
+
+// ──────────── Status Update & Delete Actions ────────────
+async function updateRecordStatus(module, id, status) {
+    try {
+        await api(`/erp/${module}/${id}/status?status=${status}`, { method: 'PATCH' });
+        showToast(`Status updated to "${status.replace(/_/g, ' ')}"`, 'success');
+        loadModule(module);
+    } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function deleteRecord(module, id) {
+    if (!confirm('Are you sure you want to delete this record?')) return;
+    try {
+        const path = module === 'employees' ? `/erp/employees/${id}` : `/erp/${module}/${id}`;
+        await api(path, { method: 'DELETE' });
+        showToast('Record deleted', 'success');
+        loadModule(module);
+    } catch (err) { showToast(err.message, 'error'); }
+}
+
+async function markNotificationRead(id) {
+    try {
+        await api(`/erp/notifications/${id}/read`, { method: 'PATCH' });
+        showToast('Notification marked as read', 'success');
+        loadModule('notifications');
+    } catch (err) { showToast(err.message, 'error'); }
+}
+
+// ──────────── Add Record Forms ────────────
 async function showAddForm(module) {
     const container = document.getElementById('add-form-container');
     container.classList.remove('d-none');
@@ -687,7 +789,7 @@ async function showAddForm(module) {
             <div class="row g-3">
                 <div class="col-md-6"><label class="form-label">Select Employee</label><select id="form-emp-id" class="form-select" required>${empOptions}</select></div>
                 <div class="col-md-6"><label class="form-label">Date</label><input id="form-date" type="date" class="form-control" value="${new Date().toISOString().slice(0,10)}" required></div>
-                <div class="col-md-6"><label class="form-label">Status</label><select id="form-status" class="form-select"><option>present</option><option>absent</option><option>late</option><option>half_day</option></select></div>
+                <div class="col-md-6"><label class="form-label">Status</label><select id="form-status" class="form-select"><option>present</option><option>absent</option><option>late</option><option>half_day</option><option>leave</option></select></div>
             </div>`;
     }
 
@@ -790,6 +892,12 @@ async function submitRecordForm(event, module) {
             allowances: parseFloat(document.getElementById('form-allowances').value) || 0.0,
             deductions: parseFloat(document.getElementById('form-deductions').value) || 0.0
         };
+    } else if (module === 'attendance') {
+        payload = {
+            employee_id: parseInt(document.getElementById('form-emp-id').value),
+            date: document.getElementById('form-date').value,
+            status: document.getElementById('form-status').value
+        };
     }
 
     try {
@@ -802,6 +910,216 @@ async function submitRecordForm(event, module) {
     } finally {
         btn.disabled = false; btn.textContent = 'Save Record';
     }
+}
+
+// ──────────── Reports & Analytics ────────────
+function renderReports(data) {
+    const summary = data.summary || {};
+    document.getElementById('workspace-content').innerHTML = `
+        <div class="page-header">
+            <div>
+                <h2>Reports &amp; Analytics</h2>
+                <p class="text-muted mb-0">Executive reports and data export center.</p>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary" onclick="window.print()"><i class="bi bi-printer me-1"></i>Print Report</button>
+                <button class="btn btn-primary" onclick="exportReportsCsv()"><i class="bi bi-download me-1"></i>Export CSV Summary</button>
+            </div>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-sm-6 col-xl-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Total Revenue</h6>
+                        <div class="stat-value text-success">${fmtCurrency(summary.total_revenue)}</div>
+                        <small class="text-muted">From Sales Orders</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Total Expenses</h6>
+                        <div class="stat-value text-danger">${fmtCurrency(summary.total_expenses)}</div>
+                        <small class="text-muted">Purchases &amp; Payroll</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Net Profit</h6>
+                        <div class="stat-value ${(summary.net_profit || 0) >= 0 ? 'text-primary' : 'text-warning'}">${fmtCurrency(summary.net_profit)}</div>
+                        <small class="text-muted">Net Operating Profit</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-sm-6 col-xl-3">
+                <div class="card stat-card h-100">
+                    <div class="card-body">
+                        <h6 class="text-muted">Inventory Valuation</h6>
+                        <div class="stat-value text-info">${fmtCurrency(summary.inventory_valuation)}</div>
+                        <small class="text-muted">Total Asset Value</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card p-4 mb-4">
+            <h5 class="mb-3">Detailed Module Metrics</h5>
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr><th>Report Category</th><th>Key Metric 1</th><th>Key Metric 2</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td><strong>Sales</strong></td><td>Orders: ${data.sales?.total_orders || 0}</td><td>Revenue: ${fmtCurrency(data.sales?.total_amount)}</td><td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Sales', [['Orders','${data.sales?.total_orders||0}'],['Revenue','${data.sales?.total_amount||0}']])">Export</button></td></tr>
+                        <tr><td><strong>Purchases</strong></td><td>Orders: ${data.purchases?.total_orders || 0}</td><td>Expenses: ${fmtCurrency(data.purchases?.total_amount)}</td><td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Purchases', [['Orders','${data.purchases?.total_orders||0}'],['Expenses','${data.purchases?.total_amount||0}']])">Export</button></td></tr>
+                        <tr><td><strong>Payroll</strong></td><td>Payout: ${fmtCurrency(data.payroll?.total_payout)}</td><td>—</td><td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Payroll', [['Payout','${data.payroll?.total_payout||0}']])">Export</button></td></tr>
+                        <tr><td><strong>Inventory</strong></td><td>SKUs: ${data.inventory?.item_types || 0}</td><td>Value: ${fmtCurrency(data.inventory?.valuation)}</td><td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Inventory', [['SKUs','${data.inventory?.item_types||0}'],['Value','${data.inventory?.valuation||0}']])">Export</button></td></tr>
+                        <tr><td><strong>CRM</strong></td><td>Customers: ${data.crm?.customers || 0}</td><td>Suppliers: ${data.crm?.suppliers || 0}</td><td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('CRM', [['Customers','${data.crm?.customers||0}'],['Suppliers','${data.crm?.suppliers||0}']])">Export</button></td></tr>
+                        <tr><td><strong>Attendance</strong></td><td>Present: ${data.attendance?.present || 0}</td><td>Absent: ${data.attendance?.absent || 0}</td><td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Attendance', [['Present','${data.attendance?.present||0}'],['Absent','${data.attendance?.absent||0}']])">Export</button></td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>`;
+    window.lastReportData = data;
+}
+
+function exportCategoryCsv(category, rows) {
+    let csvContent = "data:text/csv;charset=utf-8," + "Metric,Value\n" + rows.map(e => e.join(",")).join("\n");
+    const link = document.createElement("a");
+    link.setAttribute("href", encodeURI(csvContent));
+    link.setAttribute("download", `${category.toLowerCase()}_report.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast(`${category} CSV exported`, 'success');
+}
+
+function exportReportsCsv() {
+    if (!window.lastReportData) return showToast('No report data to export', 'error');
+    const d = window.lastReportData.summary || {};
+    exportCategoryCsv("Executive_Summary", [["Revenue", d.total_revenue||0],["Expenses", d.total_expenses||0],["Profit", d.net_profit||0],["Inventory", d.inventory_valuation||0]]);
+}
+
+// ──────────── Dashboard ────────────
+function renderDashboard(data) {
+    document.getElementById('workspace-content').innerHTML = `
+        <div class="page-header">
+            <div>
+                <h2>Dashboard</h2>
+                <p class="text-muted mb-0">A real-time view of your business.</p>
+            </div>
+        </div>
+        <div class="row g-3">
+            ${[
+                ['Revenue', data.revenue, 'currency-dollar'],
+                ['Expenses', data.expenses, 'wallet2'],
+                ['Profit', data.profit, 'graph-up'],
+                ['Employees', data.total_employees, 'people'],
+                ['Customers', data.total_customers, 'person-heart'],
+                ['Inventory Items', data.total_inventory, 'boxes'],
+                ['Pending Invoices', data.pending_invoices, 'receipt'],
+                ['Open Tasks', data.pending_tasks, 'check2-square']
+            ].map(([label, value, icon]) => `
+                <div class="col-sm-6 col-xl-3">
+                    <div class="card stat-card h-100">
+                        <div class="card-body d-flex justify-content-between">
+                            <div>
+                                <h6>${label}</h6>
+                                <div class="stat-value">${typeof value === 'number' && ['Revenue', 'Expenses', 'Profit'].includes(label) ? fmtCurrency(value) : value}</div>
+                            </div>
+                            <div class="stat-icon bg-primary-subtle text-primary">
+                                <i class="bi bi-${icon}"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+        
+        <div class="row g-3 mt-3">
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h5>Monthly Overview</h5>
+                    <canvas id="overviewChart"></canvas>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <div class="card p-3">
+                    <h5>Quick Actions</h5>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-primary text-start" onclick="loadModule('customers')"><i class="bi bi-person-plus me-2"></i>Add Customer</button>
+                        <button class="btn btn-outline-primary text-start" onclick="loadModule('inventory')"><i class="bi bi-box-seam me-2"></i>Manage Inventory</button>
+                        <button class="btn btn-outline-secondary text-start" onclick="loadModule('tasks')"><i class="bi bi-check2-square me-2"></i>Assign Tasks</button>
+                        <button class="btn btn-outline-info text-start" onclick="loadModule('attendance')"><i class="bi bi-calendar-check me-2"></i>Attendance</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="mb-1">AI Assistant is active</h5>
+                <p class="text-muted mb-0">Click the floating microphone button to speak commands like: "show inventory", "check in", "open crm", "today's attendance", etc.</p>
+            </div>
+        </div>`;
+        
+    const ctx = document.getElementById('overviewChart')?.getContext('2d');
+    if (ctx) {
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Revenue', 'Expenses', 'Profit'],
+                datasets: [{
+                    label: 'Financial Performance (₹)',
+                    data: [data.revenue, data.expenses, data.profit],
+                    backgroundColor: ['rgba(99, 102, 241, 0.8)', 'rgba(239, 68, 68, 0.8)', 'rgba(16, 185, 129, 0.8)']
+                }]
+            },
+            options: { responsive: true, scales: { y: { beginAtZero: true } } }
+        });
+    }
+}
+
+// ──────────── Settings ────────────
+function renderSettings(data) {
+    const session = getSession();
+    document.getElementById('workspace-content').innerHTML = `
+        <div class="page-header">
+            <div>
+                <h2>Settings</h2>
+                <p class="text-muted mb-0">Manage workspace options.</p>
+            </div>
+        </div>
+        <div class="card p-4">
+            <h5>Workspace Details</h5>
+            <div class="mb-3">
+                <label class="form-label">Company Code</label>
+                <div class="input-group">
+                    <input class="form-control font-mono" value="${escapeHtml(session.companyCode)}" readonly>
+                    <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText('${session.companyCode}'); showToast('Code copied!', 'success');">Copy</button>
+                </div>
+                <div class="form-text">Share this code with employees so they can join.</div>
+            </div>
+            
+            <hr>
+            
+            <h5>Preferences</h5>
+            <form id="settings-form">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="voiceToggle" checked>
+                    <label class="form-check-label" for="voiceToggle">Enable speech synthesis responses</label>
+                </div>
+                <button type="submit" class="btn btn-primary">Save Settings</button>
+            </form>
+        </div>`;
+    document.getElementById('settings-form').addEventListener('submit', event => {
+        event.preventDefault();
+        showToast('Settings saved successfully', 'success');
+    });
 }
 
 function openEmployeeRegisterModal() {
