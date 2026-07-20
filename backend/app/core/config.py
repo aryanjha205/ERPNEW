@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     # Optional in hosted deployments: the API derives the same-site OTP route.
     OTP_SERVICE_URL: Optional[str] = None
     SUPER_ADMIN_PIN: str
+    SMTP_USER: Optional[str] = None
+    SMTP_PASSWORD: Optional[str] = None
+    SMTP_HOST: Optional[str] = "smtp.gmail.com"
+    SMTP_PORT: Optional[int] = 587
 
     class Config:
         env_file = ".env"

@@ -49,21 +49,59 @@ def request_otp(data: CompanyRequestOTP, request: Request, db: Session = Depends
     db.add(otp_record)
     db.commit()
 
-    # Call Node.js OTP Service
+    email_sent = False
     dev_otp = None
-    try:
-        res = requests.post(
-            otp_service_url(request),
-            json={"email": data.email, "otp": otp_code},
-            timeout=5,
-        )
-        res.raise_for_status()
-    except requests.RequestException:
-        # Fallback for local development: log OTP to stdout so developers can bypass and verify
-        print(f"\n[DEVELOPMENT FALLBACK] Generated OTP for {data.email} is: {otp_code}\n")
+
+    # 1. Attempt direct python smtplib send if credentials configured
+    smtp_user = getattr(settings, 'SMTP_USER', None)
+    smtp_pass = getattr(settings, 'SMTP_PASSWORD', None)
+    smtp_host = getattr(settings, 'SMTP_HOST', 'smtp.gmail.com')
+    smtp_port = getattr(settings, 'SMTP_PORT', 587)
+
+    if smtp_user and smtp_pass:
+        try:
+            import smtplib
+            from email.mime.text import MIMEText
+            from email.mime.multipart import MIMEMultipart
+
+            msg = MIMEMultipart()
+            msg['From'] = smtp_user
+            msg['To'] = data.email
+            msg['Subject'] = 'Your Nexus ERP Verification Code'
+            msg.attach(MIMEText(f"Your verification code is: {otp_code}. It will expire in 5 minutes.", 'plain'))
+
+            server = smtplib.SMTP(smtp_host, int(smtp_port), timeout=5)
+            server.starttls()
+            server.login(smtp_user, smtp_pass)
+            server.send_message(msg)
+            server.quit()
+            email_sent = True
+        except Exception as exc:
+            print(f"\n[SMTP Email Error]: {exc}\n")
+
+    # 2. Attempt call to Node.js service endpoint if specified and smtplib not used
+    if not email_sent and settings.OTP_SERVICE_URL:
+        try:
+            res = requests.post(
+                otp_service_url(request),
+                json={"email": data.email, "otp": otp_code},
+                timeout=3,
+            )
+            if res.ok:
+                email_sent = True
+        except requests.RequestException as exc:
+            print(f"\n[OTP Service Request Failed]: {exc}\n")
+
+    # 3. If email could not be delivered, provide dev_otp so registration is never blocked
+    if not email_sent:
+        print(f"\n[DEV FALLBACK] Verification code for {data.email} is: {otp_code}\n")
         dev_otp = otp_code
 
-    return {"message": "OTP sent successfully", "dev_otp": dev_otp}
+    return {
+        "message": "OTP processed successfully",
+        "email_sent": email_sent,
+        "dev_otp": dev_otp
+    }
 
 def generate_qr_code_base64(code: str) -> str:
     qr = qrcode.QRCode(version=1, box_size=10, border=5)
