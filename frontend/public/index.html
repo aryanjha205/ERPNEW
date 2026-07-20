@@ -40,53 +40,49 @@
     <!-- Floating AI Voice Button -->
     <button id="voice-btn" class="btn btn-primary voice-floating-btn" title="AI Voice Assistant" hidden>
         <i class="bi bi-mic-fill fs-4"></i>
-    </button>
+    </button>    <!-- Cute & Compact Floating AI Voice Assistant Widget -->
+    <div id="aiAssistantPopup" class="cute-ai-widget d-none">
+      <div class="cute-ai-card">
+        <div class="cute-ai-header d-flex align-items-center justify-content-between">
+          <div class="d-flex align-items-center gap-2">
+            <div class="cute-avatar"><i class="bi bi-robot"></i></div>
+            <div>
+              <h6 class="mb-0 text-white fw-bold" style="font-size: 0.9rem;">Nova AI 🌸</h6>
+              <small class="text-white-50" style="font-size: 0.7rem;"><i class="bi bi-heart-fill text-danger me-1"></i>Female Voice Assistant</small>
+            </div>
+          </div>
+          <div class="d-flex align-items-center gap-1">
+            <div class="form-check form-switch text-white me-1 mb-0" title="Female Voice TTS">
+              <input class="form-check-input" type="checkbox" id="ai-tts-toggle" checked>
+            </div>
+            <button type="button" class="btn-close btn-close-white btn-sm" onclick="toggleVoiceAssistant()"></button>
+          </div>
+        </div>
+        
+        <div class="cute-ai-body" id="ai-chat-messages">
+          <div class="text-center my-2 text-muted">
+            <span class="fs-4">✨</span>
+            <p class="small text-secondary mb-2" style="font-size:0.8rem;">Hi! I'm Nova. How can I help you today?</p>
+            <div class="d-flex flex-wrap justify-content-center gap-1" id="ai-quick-chips">
+              <button class="btn btn-sm cute-chip" onclick="sendAiPrompt('Show today sales summary')">📈 Sales</button>
+              <button class="btn btn-sm cute-chip" onclick="sendAiPrompt('Check pending unpaid invoices')">🧾 Bills</button>
+              <button class="btn btn-sm cute-chip" onclick="sendAiPrompt('Check low stock inventory')">📦 Stock</button>
+              <button class="btn btn-sm cute-chip" onclick="sendAiPrompt('Show employee attendance register')">👥 Staff</button>
+            </div>
+          </div>
+        </div>
 
-    <!-- Centralized AI Assistant Offcanvas Modal -->
-    <div class="modal fade" id="aiAssistantModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-dialog-centered modal-lg">
-        <div class="modal-content border-0 shadow-lg" style="border-radius: 16px; overflow: hidden;">
-          <div class="modal-header bg-dark text-white p-3 border-bottom border-secondary">
-            <div class="d-flex align-items-center gap-2">
-              <span class="badge bg-primary p-2 fs-6 rounded-circle"><i class="bi bi-robot"></i></span>
-              <div>
-                <h5 class="modal-title mb-0 fw-bold fs-6">Nexus Intelligence Assistant</h5>
-                <small class="text-white-50" style="font-size:0.75rem"><i class="bi bi-cpu me-1"></i>OpenRouter AI Engine • Multi-Tenant RBAC Secure</small>
-              </div>
-            </div>
-            <div class="d-flex align-items-center gap-2">
-              <div class="form-check form-switch text-white me-2 mb-0" title="Toggle Voice Response">
-                <input class="form-check-input" type="checkbox" id="ai-tts-toggle" checked>
-                <label class="form-check-label small text-white-50" for="ai-tts-toggle"><i class="bi bi-volume-up-fill"></i></label>
-              </div>
-              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
+        <div class="cute-ai-footer">
+          <div id="ai-voice-status" class="cute-listening-bar d-none">
+            <span class="pulse-dot me-1"></span> Listening… Auto-send in <strong id="voice-timer-count">5</strong>s
           </div>
-          <div class="modal-body p-3 bg-light" style="max-height: 420px; overflow-y: auto;" id="ai-chat-messages">
-            <div class="text-center my-3 text-muted">
-              <i class="bi bi-stars text-primary fs-3 d-block mb-1"></i>
-              <p class="small mb-1">Ask me anything about your ERP workspace!</p>
-              <div class="d-flex flex-wrap justify-content-center gap-2 mt-3" id="ai-quick-chips">
-                <button class="btn btn-sm btn-outline-primary rounded-pill pill-chip" onclick="sendAiPrompt('Show today sales summary')"><i class="bi bi-graph-up me-1"></i>Today's Sales</button>
-                <button class="btn btn-sm btn-outline-danger rounded-pill pill-chip" onclick="sendAiPrompt('Check pending unpaid invoices')"><i class="bi bi-receipt me-1"></i>Pending Invoices</button>
-                <button class="btn btn-sm btn-outline-warning rounded-pill pill-chip" onclick="sendAiPrompt('Check low stock inventory')"><i class="bi bi-box-seam me-1"></i>Low Stock Alert</button>
-                <button class="btn btn-sm btn-outline-info rounded-pill pill-chip" onclick="sendAiPrompt('Show employee attendance register')"><i class="bi bi-people me-1"></i>Attendance</button>
-                <button class="btn btn-sm btn-outline-success rounded-pill pill-chip" onclick="sendAiPrompt('Generate executive financial report')"><i class="bi bi-file-earmark-bar-graph me-1"></i>Financial Report</button>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer p-2 bg-white border-top">
-            <div id="ai-voice-status" class="w-100 text-center text-primary small mb-1 d-none">
-              <span class="spinner-grow spinner-grow-sm me-1"></span> Listening for voice command… Speak clearly into microphone.
-            </div>
-            <form id="ai-chat-form" class="w-100 d-flex gap-2">
-              <button type="button" id="ai-mic-btn" class="btn btn-outline-primary rounded-circle" style="width:42px;height:42px;" title="Voice Dictation">
-                <i class="bi bi-mic-fill"></i>
-              </button>
-              <input id="ai-chat-input" class="form-control" placeholder="Ask AI voice assistant or type a command..." autocomplete="off">
-              <button type="submit" class="btn btn-primary px-3"><i class="bi bi-send-fill"></i></button>
-            </form>
-          </div>
+          <form id="ai-chat-form" class="d-flex gap-2 align-items-center">
+            <button type="button" id="ai-mic-btn" class="btn cute-mic-btn" title="Click to talk (Listens 5s)">
+              <i class="bi bi-mic-fill"></i>
+            </button>
+            <input id="ai-chat-input" class="form-control cute-input" placeholder="Type or tap mic..." autocomplete="off">
+            <button type="submit" class="btn cute-send-btn"><i class="bi bi-send-fill"></i></button>
+          </form>
         </div>
       </div>
     </div>

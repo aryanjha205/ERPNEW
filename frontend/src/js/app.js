@@ -11,12 +11,6 @@ function initApp() {
     });
 }
 
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initApp);
-} else {
-    initApp();
-}
-
 function syncVoiceButton(isAuthenticated = Boolean(getSession())) {
     const button = document.getElementById('voice-btn');
     if (button) button.hidden = !isAuthenticated;
@@ -1145,16 +1139,13 @@ async function setCompanyStatus(id, isActive) { if (!window.confirm(`Are you sur
 // ──────────────────────────── Centralized AI Voice & Intelligence Assistant ────────────────────────────
 let isListening = false;
 let speechRecognizer = null;
+let voiceCountdownTimer = null;
+let accumulatedTranscript = '';
 
 function toggleVoiceAssistant() {
-    const modalEl = document.getElementById('aiAssistantModal');
-    if (!modalEl) return;
-    if (window.bootstrap?.Modal) {
-        bootstrap.Modal.getOrCreateInstance(modalEl).show();
-    } else {
-        modalEl.style.display = modalEl.style.display === 'block' ? 'none' : 'block';
-        modalEl.classList.toggle('show');
-    }
+    const popupEl = document.getElementById('aiAssistantPopup');
+    if (!popupEl) return;
+    popupEl.classList.toggle('d-none');
     
     // Bind listeners if not already bound
     const form = document.getElementById('ai-chat-form');
@@ -1187,48 +1178,87 @@ function toggleMicRecording() {
     
     const statusEl = document.getElementById('ai-voice-status');
     const micBtn = document.getElementById('ai-mic-btn');
+    const timerCountEl = document.getElementById('voice-timer-count');
 
-    if (isListening && speechRecognizer) {
-        speechRecognizer.stop();
-        isListening = false;
-        if (statusEl) statusEl.classList.add('d-none');
-        if (micBtn) micBtn.classList.remove('btn-danger'), micBtn.classList.add('btn-outline-primary');
+    if (isListening) {
+        stopMicRecording();
         return;
     }
 
     try {
+        accumulatedTranscript = '';
         speechRecognizer = new SpeechRecognition();
-        speechRecognizer.continuous = false;
-        speechRecognizer.interimResults = false;
+        speechRecognizer.continuous = true;
+        speechRecognizer.interimResults = true;
         speechRecognizer.lang = 'en-IN';
+
+        let secondsRemaining = 5;
 
         speechRecognizer.onstart = () => {
             isListening = true;
             if (statusEl) statusEl.classList.remove('d-none');
-            if (micBtn) micBtn.classList.remove('btn-outline-primary'), micBtn.classList.add('btn-danger');
+            if (micBtn) micBtn.classList.add('recording');
+            if (timerCountEl) timerCountEl.textContent = secondsRemaining;
+
+            // 5-second countdown timer
+            clearInterval(voiceCountdownTimer);
+            voiceCountdownTimer = setInterval(() => {
+                secondsRemaining--;
+                if (timerCountEl) timerCountEl.textContent = secondsRemaining;
+                if (secondsRemaining <= 0) {
+                    clearInterval(voiceCountdownTimer);
+                    stopMicRecordingAndSend();
+                }
+            }, 1000);
         };
 
         speechRecognizer.onresult = event => {
-            const transcript = event.results[0][0].transcript;
-            if (transcript) {
-                sendAiPrompt(transcript);
+            let currentText = '';
+            for (let i = 0; i < event.results.length; i++) {
+                currentText += event.results[i][0].transcript + ' ';
             }
+            accumulatedTranscript = currentText.trim();
+            const inputEl = document.getElementById('ai-chat-input');
+            if (inputEl) inputEl.value = accumulatedTranscript;
         };
 
         speechRecognizer.onerror = event => {
-            console.warn('Speech recognition error:', event.error);
-            showToast(`Speech recognition: ${event.error}`, 'error');
+            console.warn('Speech recognition warning:', event.error);
         };
 
         speechRecognizer.onend = () => {
-            isListening = false;
-            if (statusEl) statusEl.classList.add('d-none');
-            if (micBtn) micBtn.classList.remove('btn-danger'), micBtn.classList.add('btn-outline-primary');
+            if (isListening && secondsRemaining > 0) {
+                try { speechRecognizer.start(); } catch (e) {}
+            }
         };
 
         speechRecognizer.start();
     } catch (err) {
         showToast('Could not access microphone.', 'error');
+    }
+}
+
+function stopMicRecording() {
+    isListening = false;
+    clearInterval(voiceCountdownTimer);
+    if (speechRecognizer) {
+        try { speechRecognizer.stop(); } catch (e) {}
+    }
+    const statusEl = document.getElementById('ai-voice-status');
+    const micBtn = document.getElementById('ai-mic-btn');
+    if (statusEl) statusEl.classList.add('d-none');
+    if (micBtn) micBtn.classList.remove('recording');
+}
+
+function stopMicRecordingAndSend() {
+    stopMicRecording();
+    const inputEl = document.getElementById('ai-chat-input');
+    const finalPrompt = accumulatedTranscript || inputEl?.value.trim();
+    if (finalPrompt) {
+        if (inputEl) inputEl.value = '';
+        sendAiPrompt(finalPrompt);
+    } else {
+        showToast('No speech detected. Please try speaking again.', 'info');
     }
 }
 
@@ -1246,7 +1276,7 @@ async function sendAiPrompt(promptText) {
     // Append AI Loading Indicator
     const aiBubble = document.createElement('div');
     aiBubble.className = 'chat-bubble-ai';
-    aiBubble.innerHTML = '<span class="spinner-border spinner-border-sm me-2 text-primary"></span><span>Analyzing workspace context…</span>';
+    aiBubble.innerHTML = '<span class="spinner-border spinner-border-sm me-2 text-primary"></span><span>Thinking…</span>';
     messagesBox.appendChild(aiBubble);
     messagesBox.scrollTop = messagesBox.scrollHeight;
 
@@ -1260,7 +1290,7 @@ async function sendAiPrompt(promptText) {
         aiBubble.innerHTML = `<i class="bi bi-robot me-1 text-primary"></i> ${escapeHtml(speechText)}`;
         messagesBox.scrollTop = messagesBox.scrollHeight;
 
-        // Speak aloud if TTS toggle is checked
+        // Speak aloud in Female Voice if TTS toggle is checked
         const ttsToggle = document.getElementById('ai-tts-toggle');
         if (ttsToggle && ttsToggle.checked) {
             speakResponse(speechText);
@@ -1287,11 +1317,37 @@ function speakResponse(text) {
     try {
         window.speechSynthesis.cancel(); // Cancel any ongoing speech
         const utterance = new SpeechSynthesisUtterance(text);
+        
+        // Select Female Voice
+        const voices = window.speechSynthesis.getVoices();
+        const femaleVoice = voices.find(v => 
+            v.name.toLowerCase().includes('female') ||
+            v.name.includes('Google UK English Female') ||
+            v.name.includes('Samantha') ||
+            v.name.includes('Zira') ||
+            v.name.includes('Microsoft Zira') ||
+            v.name.includes('Victoria') ||
+            v.name.includes('Karen') ||
+            v.name.includes('Google हिन्दी') ||
+            v.name.includes('Google US English')
+        ) || voices.find(v => v.lang.startsWith('en'));
+
+        if (femaleVoice) {
+            utterance.voice = femaleVoice;
+        }
+
+        utterance.pitch = 1.25; // Cute higher female pitch
         utterance.rate = 1.0;
-        utterance.pitch = 1.0;
         window.speechSynthesis.speak(utterance);
     } catch (err) {
         console.warn('TTS Speech Synthesis error:', err);
     }
+}
+
+// Initialize application after all function declarations are hoisted & defined
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initApp);
+} else {
+    initApp();
 }
 

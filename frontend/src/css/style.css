@@ -667,4 +667,141 @@ body {
     transform: translateY(-1px);
 }
 
+/* ─── Cute & Compact AI Assistant Widget ─── */
+.cute-ai-widget {
+    position: fixed;
+    right: 20px;
+    bottom: 85px;
+    width: 370px;
+    height: 480px;
+    z-index: 1060;
+    animation: fadeUp 0.3s ease-out;
+}
+
+.cute-ai-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #ffffff;
+    border-radius: 24px;
+    border: 1px solid rgba(99,102,241,0.2);
+    box-shadow: 0 16px 40px rgba(99,102,241,0.2), 0 4px 12px rgba(0,0,0,0.08);
+    overflow: hidden;
+}
+
+.cute-ai-header {
+    background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+    padding: 0.85rem 1.1rem;
+}
+
+.cute-avatar {
+    width: 34px;
+    height: 34px;
+    background: rgba(255,255,255,0.25);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ffffff;
+    font-size: 1.1rem;
+}
+
+.cute-ai-body {
+    flex: 1;
+    padding: 0.9rem;
+    overflow-y: auto;
+    background: #f8fafc;
+}
+
+.cute-ai-footer {
+    padding: 0.75rem 0.9rem;
+    background: #ffffff;
+    border-top: 1px solid #f1f5f9;
+}
+
+.cute-chip {
+    background: #eef2ff;
+    color: #4f46e5;
+    border: 1px solid #c7d2fe;
+    border-radius: 20px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 0.25rem 0.65rem;
+    transition: all 0.2s ease;
+}
+.cute-chip:hover {
+    background: #4f46e5;
+    color: #ffffff;
+    transform: scale(1.04);
+}
+
+.cute-input {
+    border-radius: 20px;
+    font-size: 0.82rem;
+    padding: 0.45rem 0.9rem;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+}
+.cute-input:focus {
+    background: #ffffff;
+    box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+}
+
+.cute-mic-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #eef2ff;
+    color: #6366f1;
+    border: 1px solid #c7d2fe;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    flex-shrink: 0;
+}
+.cute-mic-btn.recording {
+    background: #ef4444 !important;
+    color: #ffffff !important;
+    border-color: #fca5a5 !important;
+    animation: pulseMic 1.2s infinite;
+}
+
+.cute-send-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6366f1, #818cf8);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    flex-shrink: 0;
+    border: 0;
+}
+
+.cute-listening-bar {
+    font-size: 0.75rem;
+    color: #ef4444;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 0.4rem;
+}
+
+@keyframes pulseMic {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+    70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+
+@media (max-width: 576px) {
+    .cute-ai-widget {
+        right: 12px;
+        bottom: 75px;
+        width: calc(100vw - 24px);
+        height: 440px;
+    }
+}
+
 @media (max-width: 767px) { .auth-wrapper { padding: 0; align-items: stretch; }.auth-shell { min-height: 100vh; border: 0; border-radius: 0; grid-template-columns: 1fr; }.auth-aside { display: none; }.auth-container { padding: 2rem 1.35rem; }.auth-mobile-brand { display: flex; }.directory-toolbar { align-items: stretch; flex-direction: column; }.directory-toolbar > span { display: none; }.admin-header { align-items: flex-start; }.admin-header .btn { width: 100%; }.admin-table { min-width: 760px; } }
