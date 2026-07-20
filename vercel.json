@@ -32,8 +32,16 @@
       "dest": "frontend/src/$1"
     },
     {
+      "src": "/sw.js",
+      "dest": "frontend/public/sw.js"
+    },
+    {
+      "src": "/manifest.json",
+      "dest": "frontend/public/manifest.json"
+    },
+    {
       "src": "/(.*)",
-      "dest": "frontend/public/$1"
+      "dest": "frontend/public/index.html"
     }
   ]
 }
