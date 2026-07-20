@@ -347,16 +347,28 @@ def create_payroll(data: PayrollCreate, user: dict = Depends(get_current_user), 
 
 # ──────────────────────────── Settings ────────────────────────────
 
+from app.models.company import Company
+from app.core.templates import get_company_type_config
+
 class SettingsUpdate(BaseModel):
     enable_voice_commands: bool = True
     notifications_enabled: bool = True
 
 @router.get("/settings")
-def get_settings(user: dict = Depends(get_current_user)):
+def get_settings(user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    cid = _cid(user)
+    company = db.query(Company).filter(Company.id == cid).first()
+    c_type = company.company_type if company else "Custom Business"
+    tmpl = get_company_type_config(c_type)
     return {
         "enable_voice_commands": True,
         "notifications_enabled": True,
-        "company_id": _cid(user)
+        "company_id": cid,
+        "company_name": company.company_name if company else "",
+        "company_code": company.company_code if company else "",
+        "company_type": c_type,
+        "allowed_modules": tmpl.get("modules", []),
+        "primary_focus": tmpl.get("primary_focus", ""),
     }
 
 @router.post("/settings")

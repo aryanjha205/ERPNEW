@@ -86,6 +86,7 @@ def company_admin_login(data: CompanyAdminLogin, db: Session = Depends(get_db)):
         "company_id": company.id,
         "company_name": company.company_name,
         "company_code": company.company_code,
+        "company_type": company.company_type,
     }
 
 
@@ -108,6 +109,7 @@ def employee_login(data: EmployeeLoginEmail, db: Session = Depends(get_db)):
         "role": employee.role,
         "company_id": employee.company_id,
         "company_name": company.company_name,
+        "company_type": company.company_type,
         "employee_name": employee.employee_name,
     }
 
@@ -137,5 +139,6 @@ def employee_login_code(data: EmployeeLoginCode, db: Session = Depends(get_db)):
         "role": employee.role,
         "company_id": employee.company_id,
         "company_name": company.company_name,
+        "company_type": company.company_type,
         "employee_name": employee.employee_name,
     }

@@ -24,132 +24,68 @@ function getSession() {
         token,
         role,
         companyName: store.getItem('erp_company_name') || 'Workspace',
-        companyCode: store.getItem('erp_company_code') || ''
+        companyCode: store.getItem('erp_company_code') || '',
+        companyType: store.getItem('erp_company_type') || 'Custom Business'
     } : null;
 }
 
 function saveSession(data, remember = true) {
     const store = remember ? localStorage : sessionStorage;
-    localStorage.removeItem('erp_token'); localStorage.removeItem('erp_role'); localStorage.removeItem('erp_company_name'); localStorage.removeItem('erp_company_code');
-    sessionStorage.removeItem('erp_token'); sessionStorage.removeItem('erp_role'); sessionStorage.removeItem('erp_company_name'); sessionStorage.removeItem('erp_company_code');
+    ['erp_token', 'erp_role', 'erp_company_name', 'erp_company_code', 'erp_company_type'].forEach(k => {
+        localStorage.removeItem(k);
+        sessionStorage.removeItem(k);
+    });
     store.setItem('erp_token', data.access_token);
     store.setItem('erp_role', data.role);
     store.setItem('erp_company_name', data.company_name || 'Nexus ERP');
     store.setItem('erp_company_code', data.company_code || '');
+    store.setItem('erp_company_type', data.company_type || 'Custom Business');
 }
 
-function escapeHtml(value = '') {
-    return String(value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
-}
-
-async function readApiResponse(response) {
-    const contentType = response.headers.get('content-type') || '';
-    let body;
-    if (contentType.includes('application/json')) {
-        body = await response.json();
-    } else {
-        body = await response.text();
-    }
-    if (!response.ok) {
-        const errorMsg = typeof body === 'object' && body.detail ? body.detail : (typeof body === 'string' && body ? body : 'The server could not complete this request. Please try again in a moment.');
-        throw new Error(errorMsg);
-    }
-    return body;
-}
-
-function renderLogin() {
-    syncVoiceButton(false);
-    document.getElementById('app-root').innerHTML = `
-      <div class="auth-wrapper"><div class="auth-shell">
-        <section class="auth-aside"><div class="brand-lockup"><span class="brand-mark"><i class="bi bi-boxes"></i></span><span>Nexus</span></div><div class="auth-aside-copy"><span class="eyebrow">AI-native operations</span><h1>Run every part of your business from one calm workspace.</h1><p>Secure, multi-tenant ERP for the teams building what comes next.</p></div><div class="auth-feature"><i class="bi bi-shield-check"></i><div><strong>Private by design</strong><span>Every workspace is securely isolated.</span></div></div></section>
-        <section class="auth-container"><div class="auth-mobile-brand"><span class="brand-mark"><i class="bi bi-boxes"></i></span> Nexus</div><div class="auth-header"><span class="eyebrow">Secure sign in</span><h2>Welcome back</h2><p>Use your workspace credentials to continue.</p></div>
-          <form id="login-form">
-            <div class="mb-3"><label class="form-label">Access type</label><select id="login-type" class="form-select"><option value="employee">Employee</option><option value="company_admin">Company administrator</option><option value="super_admin">Platform administrator</option></select></div>
-            <div class="mb-3" id="company-code-field"><label class="form-label">Company code <span class="text-muted fw-normal">(optional)</span></label><input id="company-code" class="form-control text-uppercase" placeholder="COMP-X8A7K3" autocomplete="organization"></div>
-            <div class="mb-3" id="email-field"><label class="form-label">Email address</label><input id="login-email" type="email" class="form-control" autocomplete="email" placeholder="you@company.com" required></div>
-            <div class="mb-3"><label class="form-label d-flex justify-content-between" id="password-label">Password <button type="button" id="toggle-password" class="link-button">Show</button></label><input id="login-password" type="password" class="form-control" autocomplete="current-password" required></div>
-            <label class="check-row mb-4"><input id="remember-session" type="checkbox" checked><span>Keep me signed in on this device</span></label>
-            <button class="btn btn-primary w-100 btn-auth" type="submit"><span>Sign in securely</span><i class="bi bi-arrow-right"></i></button>
-          </form>
-          <div class="auth-divider"><span>New to Nexus?</span></div>
-          <button type="button" class="btn btn-outline-secondary w-100 mb-2" onclick="openRegisterModal()"><i class="bi bi-building-add me-2"></i>Create a company workspace</button>
-          <button type="button" class="btn btn-outline-info w-100" onclick="openEmployeeRegisterModal()"><i class="bi bi-person-plus me-2"></i>Register as Employee</button>
-          <p class="auth-help">Employees should get a company code from their administrator.</p>
-        </section></div></div>`;
-    const type = document.getElementById('login-type');
-    type.addEventListener('change', updateLoginFields);
-    document.getElementById('login-form').addEventListener('submit', handleLogin);
-    document.getElementById('toggle-password').addEventListener('click', () => {
-        const input = document.getElementById('login-password');
-        input.type = input.type === 'password' ? 'text' : 'password';
-        document.getElementById('toggle-password').textContent = input.type === 'password' ? 'Show' : 'Hide';
-    });
-    updateLoginFields();
-}
-
-function updateLoginFields() {
-    const type = document.getElementById('login-type').value;
-    const email = document.getElementById('email-field');
-    const code = document.getElementById('company-code-field');
-    document.getElementById('password-label').textContent = type === 'super_admin' ? 'Secure PIN' : 'Password';
-    email.hidden = type === 'super_admin'; code.hidden = type !== 'employee';
-    document.getElementById('login-email').required = type !== 'super_admin';
-    document.getElementById('company-code').required = false;
-}
-
-async function handleLogin(event) {
-    event.preventDefault();
-    const type = document.getElementById('login-type').value;
-    const password = document.getElementById('login-password').value;
-    const email = document.getElementById('login-email').value.trim();
-    const companyCode = document.getElementById('company-code').value.trim().toUpperCase();
-    const button = event.currentTarget.querySelector('button[type="submit"]'); button.disabled = true; button.innerHTML = '<span class="spinner-border spinner-border-sm"></span><span>Signing in…</span>';
-    try {
-        let endpoint, body;
-        if (type === 'super_admin') { endpoint = '/auth/super-admin/login'; body = { pin: password }; }
-        else if (type === 'company_admin') { endpoint = '/auth/company-admin/login'; body = { email, password }; }
-        else if (companyCode) { endpoint = '/auth/employee/login-code'; body = { company_code: companyCode, employee_email: email, password }; }
-        else { endpoint = '/auth/employee/login'; body = { email, password }; }
-        const response = await fetch(API + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        const data = await readApiResponse(response);
-        if (!response.ok) throw new Error(data.detail || 'Sign in failed');
-        saveSession(data, document.getElementById('remember-session').checked);
-        renderWorkspace(getSession());
-    } catch (error) { showToast(error.message, 'error'); }
-    finally { button.disabled = false; button.innerHTML = '<span>Sign in securely</span><i class="bi bi-arrow-right"></i>'; }
-}
-
-function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme');
-    const target = current === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', target);
-    localStorage.setItem('erp_theme', target);
-    showToast(`Switched to ${target} mode`, 'success');
-}
+const COMPANY_TYPE_MODULES = {
+    'Manufacturing': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Projects', 'Tasks', 'Notifications', 'Reports', 'Settings'],
+    'Chemical Industry': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Notifications', 'Reports', 'Settings'],
+    'Pharmaceutical': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Notifications', 'Reports', 'Settings'],
+    'Retail': ['Dashboard', 'Employees', 'Attendance', 'Customers', 'Inventory', 'Sales', 'Invoices', 'Notifications', 'Reports', 'Settings'],
+    'Wholesale': ['Dashboard', 'Employees', 'Customers', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Notifications', 'Reports', 'Settings'],
+    'Trading': ['Dashboard', 'Employees', 'Customers', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Notifications', 'Reports', 'Settings'],
+    'Construction': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Payroll', 'Suppliers', 'Inventory', 'Purchases', 'Projects', 'Tasks', 'Notifications', 'Reports', 'Settings'],
+    'Hospital': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll', 'Customers', 'Suppliers', 'Inventory', 'Tasks', 'Notifications', 'Reports', 'Settings'],
+    'School': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll', 'Customers', 'Notifications', 'Reports', 'Settings'],
+    'College': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll', 'Customers', 'Projects', 'Tasks', 'Notifications', 'Reports', 'Settings'],
+    'Restaurant': ['Dashboard', 'Employees', 'Attendance', 'Payroll', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Notifications', 'Reports', 'Settings'],
+    'Hotel': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Payroll', 'Customers', 'Suppliers', 'Inventory', 'Sales', 'Tasks', 'Notifications', 'Reports', 'Settings'],
+    'Logistics': ['Dashboard', 'Employees', 'Attendance', 'Customers', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Tasks', 'Notifications', 'Reports', 'Settings'],
+    'Warehouse': ['Dashboard', 'Employees', 'Attendance', 'Suppliers', 'Inventory', 'Purchases', 'Tasks', 'Notifications', 'Reports', 'Settings'],
+    'Agriculture': ['Dashboard', 'Employees', 'Attendance', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Notifications', 'Reports', 'Settings'],
+    'Textile': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Payroll', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Notifications', 'Reports', 'Settings'],
+    'Automobile': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Payroll', 'Customers', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Projects', 'Tasks', 'Notifications', 'Reports', 'Settings'],
+    'Electronics': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Payroll', 'Customers', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Notifications', 'Reports', 'Settings'],
+    'IT Company': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll', 'Customers', 'Invoices', 'Projects', 'Tasks', 'Notifications', 'Reports', 'Settings'],
+    'Service Business': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll', 'Customers', 'Sales', 'Invoices', 'Projects', 'Tasks', 'Notifications', 'Reports', 'Settings'],
+    'Custom Business': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll', 'Customers', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Projects', 'Tasks', 'Notifications', 'Reports', 'Settings'],
+};
 
 function renderWorkspace(session) {
     syncVoiceButton(true);
     if (session.role === 'super_admin') return renderSuperAdminDashboard();
     const root = document.getElementById('app-root');
-    const modules = [
-        'Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll',
-        'Customers', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices',
-        'Projects', 'Tasks', 'Reports', 'Notifications', 'Settings'
-    ];
+    const availableModules = COMPANY_TYPE_MODULES[session.companyType] || COMPANY_TYPE_MODULES['Custom Business'];
+    
     root.innerHTML = `
       <div class="app-layout">
         <aside class="sidebar">
           <div class="sidebar-brand">
             <span class="sidebar-brand-icon"><i class="bi bi-boxes"></i></span>
             <div>
-              <h5>${escapeHtml(session.companyName)}</h5>
-              <small>${escapeHtml(session.role.replace('_', ' '))}</small>
+              <h5 class="mb-0">${escapeHtml(session.companyName)}</h5>
+              <small class="text-primary fw-semibold" style="font-size:0.75rem">${escapeHtml(session.companyType)}</small>
             </div>
           </div>
           <div class="sidebar-section">
             <p class="sidebar-section-title">Workspace</p>
             <nav class="sidebar-nav">
-              ${modules.map(name => `<button class="sidebar-link ${name === 'Dashboard' ? 'active' : ''}" data-module="${name.toLowerCase()}"><i class="bi bi-${moduleIcon(name)}"></i>${name}</button>`).join('')}
+              ${availableModules.map(name => `<button class="sidebar-link ${name === 'Dashboard' ? 'active' : ''}" data-module="${name.toLowerCase()}"><i class="bi bi-${moduleIcon(name)}"></i>${name}</button>`).join('')}
             </nav>
           </div>
           <div class="sidebar-footer">
@@ -517,10 +453,33 @@ function renderRecords(module, records) {
         </div>`;
 }
 
-function showAddForm(module) {
+async function showAddForm(module) {
     const container = document.getElementById('add-form-container');
     container.classList.remove('d-none');
+    container.innerHTML = '<div class="spinner-border spinner-border-sm text-primary me-2"></div><span>Loading form options…</span>';
     
+    let employees = [], customers = [], suppliers = [], projects = [];
+    try {
+        if (['attendance', 'leaves', 'payroll', 'tasks'].includes(module)) {
+            employees = await api('/erp/employees');
+        }
+        if (['sales', 'invoices'].includes(module)) {
+            customers = await api('/erp/customers');
+        }
+        if (module === 'purchases') {
+            suppliers = await api('/erp/suppliers');
+        }
+        if (module === 'tasks') {
+            projects = await api('/erp/projects');
+        }
+    } catch (err) {
+        console.warn('Could not load relational dropdown data:', err);
+    }
+
+    const empOptions = employees.length
+        ? employees.map(e => `<option value="${e.id}">${escapeHtml(e.employee_name)} (${escapeHtml(e.department || 'Staff')})</option>`).join('')
+        : '<option value="">No employees found — Register an employee first</option>';
+
     let fieldsHtml = '';
     if (module === 'customers' || module === 'suppliers') {
         fieldsHtml = `
@@ -556,15 +515,33 @@ function showAddForm(module) {
                 <div class="col-md-6"><label class="form-label">Department Name</label><input id="form-name" class="form-control" required></div>
                 <div class="col-md-6"><label class="form-label">Description</label><input id="form-desc" class="form-control"></div>
             </div>`;
-    } else if (module === 'sales' || module === 'purchases') {
+    } else if (module === 'sales') {
+        const custOptions = customers.length
+            ? customers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')
+            : '<option value="">Select or leave blank</option>';
         fieldsHtml = `
             <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Select Customer</label><select id="form-customer-id" class="form-select">${custOptions}</select></div>
                 <div class="col-md-6"><label class="form-label">Total Amount (₹)</label><input id="form-amount" type="number" step="0.01" class="form-control" required></div>
-                <div class="col-md-6"><label class="form-label">Notes</label><input id="form-notes" class="form-control"></div>
+                <div class="col-md-12"><label class="form-label">Notes</label><input id="form-notes" class="form-control" placeholder="Sales order notes"></div>
+            </div>`;
+    } else if (module === 'purchases') {
+        const supOptions = suppliers.length
+            ? suppliers.map(s => `<option value="${s.id}">${escapeHtml(s.name)}</option>`).join('')
+            : '<option value="">Select or leave blank</option>';
+        fieldsHtml = `
+            <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Select Supplier</label><select id="form-supplier-id" class="form-select">${supOptions}</select></div>
+                <div class="col-md-6"><label class="form-label">Total Amount (₹)</label><input id="form-amount" type="number" step="0.01" class="form-control" required></div>
+                <div class="col-md-12"><label class="form-label">Notes</label><input id="form-notes" class="form-control" placeholder="Purchase order notes"></div>
             </div>`;
     } else if (module === 'invoices') {
+        const custOptions = customers.length
+            ? customers.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join('')
+            : '<option value="">Select or leave blank</option>';
         fieldsHtml = `
             <div class="row g-3">
+                <div class="col-md-6"><label class="form-label">Select Customer</label><select id="form-customer-id" class="form-select">${custOptions}</select></div>
                 <div class="col-md-6"><label class="form-label">Total Amount (₹)</label><input id="form-amount" type="number" step="0.01" class="form-control" required></div>
                 <div class="col-md-6"><label class="form-label">Due Date</label><input id="form-duedate" type="date" class="form-control" required></div>
             </div>`;
@@ -576,25 +553,33 @@ function showAddForm(module) {
                 <div class="col-md-6"><label class="form-label">Budget (₹)</label><input id="form-budget" type="number" step="0.01" class="form-control" value="0.00"></div>
             </div>`;
     } else if (module === 'tasks') {
+        const assignOptions = employees.length
+            ? employees.map(e => `<option value="${e.id}">${escapeHtml(e.employee_name)}</option>`).join('')
+            : '<option value="">Unassigned</option>';
+        const projOptions = projects.length
+            ? projects.map(p => `<option value="${p.id}">${escapeHtml(p.name)}</option>`).join('')
+            : '<option value="">General Project</option>';
         fieldsHtml = `
             <div class="row g-3">
                 <div class="col-md-6"><label class="form-label">Task Title</label><input id="form-title" class="form-control" required></div>
-                <div class="col-md-6"><label class="form-label">Description</label><input id="form-desc" class="form-control"></div>
+                <div class="col-md-6"><label class="form-label">Assign To Employee</label><select id="form-assigned" class="form-select">${assignOptions}</select></div>
+                <div class="col-md-6"><label class="form-label">Project</label><select id="form-project" class="form-select">${projOptions}</select></div>
                 <div class="col-md-6"><label class="form-label">Priority</label><select id="form-priority" class="form-select"><option>low</option><option selected>medium</option><option>high</option><option>urgent</option></select></div>
+                <div class="col-md-12"><label class="form-label">Description</label><input id="form-desc" class="form-control"></div>
             </div>`;
     } else if (module === 'leaves') {
         fieldsHtml = `
             <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">Employee ID</label><input id="form-emp-id" type="number" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Select Employee</label><select id="form-emp-id" class="form-select" required>${empOptions}</select></div>
                 <div class="col-md-6"><label class="form-label">Leave Type</label><select id="form-type" class="form-select"><option>sick</option><option>casual</option><option>annual</option></select></div>
                 <div class="col-md-6"><label class="form-label">Start Date</label><input id="form-start" type="date" class="form-control" required></div>
                 <div class="col-md-6"><label class="form-label">End Date</label><input id="form-end" type="date" class="form-control" required></div>
-                <div class="col-md-12"><label class="form-label">Reason</label><input id="form-reason" class="form-control"></div>
+                <div class="col-md-12"><label class="form-label">Reason</label><input id="form-reason" class="form-control" placeholder="Reason for leave"></div>
             </div>`;
     } else if (module === 'payroll') {
         fieldsHtml = `
             <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">Employee ID</label><input id="form-emp-id" type="number" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Select Employee</label><select id="form-emp-id" class="form-select" required>${empOptions}</select></div>
                 <div class="col-md-6"><label class="form-label">Month</label><input id="form-month" class="form-control" placeholder="July 2026" required></div>
                 <div class="col-md-4"><label class="form-label">Basic Salary (₹)</label><input id="form-basic" type="number" step="0.01" class="form-control" required></div>
                 <div class="col-md-4"><label class="form-label">Allowances (₹)</label><input id="form-allowances" type="number" step="0.01" class="form-control" value="0.00"></div>
@@ -603,9 +588,9 @@ function showAddForm(module) {
     } else if (module === 'attendance') {
         fieldsHtml = `
             <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">Employee ID</label><input id="form-emp-id" type="number" class="form-control" required></div>
-                <div class="col-md-6"><label class="form-label">Date</label><input id="form-date" type="date" class="form-control" required></div>
-                <div class="col-md-6"><label class="form-label">Status</label><select id="form-status" class="form-select"><option>present</option><option>absent</option><option>late</option></select></div>
+                <div class="col-md-6"><label class="form-label">Select Employee</label><select id="form-emp-id" class="form-select" required>${empOptions}</select></div>
+                <div class="col-md-6"><label class="form-label">Date</label><input id="form-date" type="date" class="form-control" value="${new Date().toISOString().slice(0,10)}" required></div>
+                <div class="col-md-6"><label class="form-label">Status</label><select id="form-status" class="form-select"><option>present</option><option>absent</option><option>late</option><option>half_day</option></select></div>
             </div>`;
     }
 
@@ -660,13 +645,21 @@ async function submitRecordForm(event, module) {
             name: document.getElementById('form-name').value,
             description: document.getElementById('form-desc').value
         };
-    } else if (module === 'sales' || module === 'purchases') {
+    } else if (module === 'sales') {
         payload = {
+            customer_id: parseInt(document.getElementById('form-customer-id')?.value) || null,
+            total_amount: parseFloat(document.getElementById('form-amount').value) || 0.0,
+            notes: document.getElementById('form-notes').value
+        };
+    } else if (module === 'purchases') {
+        payload = {
+            supplier_id: parseInt(document.getElementById('form-supplier-id')?.value) || null,
             total_amount: parseFloat(document.getElementById('form-amount').value) || 0.0,
             notes: document.getElementById('form-notes').value
         };
     } else if (module === 'invoices') {
         payload = {
+            customer_id: parseInt(document.getElementById('form-customer-id')?.value) || null,
             total_amount: parseFloat(document.getElementById('form-amount').value) || 0.0,
             due_date: document.getElementById('form-duedate').value
         };
@@ -680,7 +673,9 @@ async function submitRecordForm(event, module) {
         payload = {
             title: document.getElementById('form-title').value,
             description: document.getElementById('form-desc').value,
-            priority: document.getElementById('form-priority').value
+            priority: document.getElementById('form-priority').value,
+            assigned_to: parseInt(document.getElementById('form-assigned')?.value) || null,
+            project_id: parseInt(document.getElementById('form-project')?.value) || null
         };
     } else if (module === 'leaves') {
         payload = {
