@@ -1,7 +1,7 @@
 const API = '/api';
 let recognition;
 
-document.addEventListener('DOMContentLoaded', () => {
+function initApp() {
     const session = getSession();
     session ? renderWorkspace(session) : renderLogin();
     document.getElementById('voice-btn')?.addEventListener('click', toggleVoiceAssistant);
@@ -9,7 +9,13 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('registerCompanyModal')?.addEventListener('click', event => {
         if (!window.bootstrap && (event.target.matches('[data-bs-dismiss="modal"]') || event.target.closest('[data-bs-dismiss="modal"]'))) closeRegisterModal();
     });
-});
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initApp);
+} else {
+    initApp();
+}
 
 function syncVoiceButton(isAuthenticated = Boolean(getSession())) {
     const button = document.getElementById('voice-btn');
