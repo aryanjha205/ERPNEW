@@ -14,7 +14,7 @@ from sqlalchemy import func as sqlfunc, extract
 from app.db.database import get_db
 from app.core.deps import get_current_user
 from app.models.erp import (
-    Customer, Supplier, InventoryItem, SalesOrder, PurchaseOrder,
+    Department, Customer, Supplier, InventoryItem, SalesOrder, PurchaseOrder,
     Invoice, Attendance, LeaveRequest, Payroll, Project, Task, Notification
 )
 from app.models.employee import Employee

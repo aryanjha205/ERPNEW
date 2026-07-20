@@ -248,7 +248,7 @@ function renderReports(data) {
                 <div class="card stat-card h-100">
                     <div class="card-body">
                         <h6 class="text-muted">Total Revenue</h6>
-                        <div class="stat-value text-success">${summary.total_revenue?.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) || '$0.00'}</div>
+                        <div class="stat-value text-success">${summary.total_revenue?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) || '₹0.00'}</div>
                         <small class="text-muted">From Sales Orders</small>
                     </div>
                 </div>
@@ -257,7 +257,7 @@ function renderReports(data) {
                 <div class="card stat-card h-100">
                     <div class="card-body">
                         <h6 class="text-muted">Total Expenses</h6>
-                        <div class="stat-value text-danger">${summary.total_expenses?.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) || '$0.00'}</div>
+                        <div class="stat-value text-danger">${summary.total_expenses?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) || '₹0.00'}</div>
                         <small class="text-muted">Purchases & Payroll</small>
                     </div>
                 </div>
@@ -266,7 +266,7 @@ function renderReports(data) {
                 <div class="card stat-card h-100">
                     <div class="card-body">
                         <h6 class="text-muted">Net Profit</h6>
-                        <div class="stat-value ${summary.net_profit >= 0 ? 'text-primary' : 'text-warning'}">${summary.net_profit?.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) || '$0.00'}</div>
+                        <div class="stat-value ${summary.net_profit >= 0 ? 'text-primary' : 'text-warning'}">${summary.net_profit?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) || '₹0.00'}</div>
                         <small class="text-muted">Net Operating Profit</small>
                     </div>
                 </div>
@@ -275,7 +275,7 @@ function renderReports(data) {
                 <div class="card stat-card h-100">
                     <div class="card-body">
                         <h6 class="text-muted">Inventory Valuation</h6>
-                        <div class="stat-value text-info">${summary.inventory_valuation?.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) || '$0.00'}</div>
+                        <div class="stat-value text-info">${summary.inventory_valuation?.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) || '₹0.00'}</div>
                         <small class="text-muted">Total Asset Value</small>
                     </div>
                 </div>
@@ -298,26 +298,26 @@ function renderReports(data) {
                         <tr>
                             <td><strong>Sales Report</strong></td>
                             <td>Total Orders: ${data.sales?.total_orders || 0}</td>
-                            <td>Revenue: $${data.sales?.total_amount || 0}</td>
-                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Sales', [['Total Orders', '${data.sales?.total_orders}'], ['Total Revenue', '${data.sales?.total_amount}']])">Export Sales CSV</button></td>
+                            <td>Revenue: ₹${data.sales?.total_amount || 0}</td>
+                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Sales', [['Total Orders', '${data.sales?.total_orders}'], ['Total Revenue', '₹${data.sales?.total_amount}']])">Export Sales CSV</button></td>
                         </tr>
                         <tr>
                             <td><strong>Purchases Report</strong></td>
                             <td>Purchase Orders: ${data.purchases?.total_orders || 0}</td>
-                            <td>Expenses: $${data.purchases?.total_amount || 0}</td>
-                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Purchases', [['Total Orders', '${data.purchases?.total_orders}'], ['Total Expenses', '${data.purchases?.total_amount}']])">Export Purchases CSV</button></td>
+                            <td>Expenses: ₹${data.purchases?.total_amount || 0}</td>
+                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Purchases', [['Total Orders', '${data.purchases?.total_orders}'], ['Total Expenses', '₹${data.purchases?.total_amount}']])">Export Purchases CSV</button></td>
                         </tr>
                         <tr>
                             <td><strong>Payroll Report</strong></td>
-                            <td>Total Salary Payout: $${data.payroll?.total_payout || 0}</td>
+                            <td>Total Salary Payout: ₹${data.payroll?.total_payout || 0}</td>
                             <td>Status: Calculated</td>
-                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Payroll', [['Total Payout', '${data.payroll?.total_payout}']])">Export Payroll CSV</button></td>
+                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Payroll', [['Total Payout', '₹${data.payroll?.total_payout}']])">Export Payroll CSV</button></td>
                         </tr>
                         <tr>
                             <td><strong>Inventory Report</strong></td>
                             <td>Item SKUs: ${data.inventory?.item_types || 0}</td>
-                            <td>Total Valuation: $${data.inventory?.valuation || 0}</td>
-                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Inventory', [['Item SKUs', '${data.inventory?.item_types}'], ['Valuation', '${data.inventory?.valuation}']])">Export Inventory CSV</button></td>
+                            <td>Total Valuation: ₹${data.inventory?.valuation || 0}</td>
+                            <td><button class="btn btn-sm btn-outline-primary" onclick="exportCategoryCsv('Inventory', [['Item SKUs', '${data.inventory?.item_types}'], ['Valuation', '₹${data.inventory?.valuation}']])">Export Inventory CSV</button></td>
                         </tr>
                         <tr>
                             <td><strong>CRM (Customers & Suppliers)</strong></td>
@@ -387,7 +387,7 @@ function renderDashboard(data) {
                         <div class="card-body d-flex justify-content-between">
                             <div>
                                 <h6>${label}</h6>
-                                <div class="stat-value">${typeof value === 'number' && ['Revenue', 'Expenses', 'Profit'].includes(label) ? value.toLocaleString(undefined, { style: 'currency', currency: 'USD' }) : value}</div>
+                                <div class="stat-value">${typeof value === 'number' && ['Revenue', 'Expenses', 'Profit'].includes(label) ? value.toLocaleString('en-IN', { style: 'currency', currency: 'INR' }) : value}</div>
                             </div>
                             <div class="stat-icon bg-primary-subtle text-primary">
                                 <i class="bi bi-${icon}"></i>
@@ -432,7 +432,7 @@ function renderDashboard(data) {
             data: {
                 labels: ['Revenue', 'Expenses', 'Profit'],
                 datasets: [{
-                    label: 'Financial Performance ($)',
+                    label: 'Financial Performance (₹)',
                     data: [data.revenue, data.expenses, data.profit],
                     backgroundColor: ['rgba(99, 102, 241, 0.8)', 'rgba(239, 68, 68, 0.8)', 'rgba(16, 185, 129, 0.8)']
                 }]
@@ -537,7 +537,7 @@ function showAddForm(module) {
                 <div class="col-md-6"><label class="form-label">SKU</label><input id="form-sku" class="form-control"></div>
                 <div class="col-md-6"><label class="form-label">Category</label><input id="form-category" class="form-control"></div>
                 <div class="col-md-4"><label class="form-label">Quantity</label><input id="form-quantity" type="number" class="form-control" value="0"></div>
-                <div class="col-md-4"><label class="form-label">Unit Price ($)</label><input id="form-price" type="number" step="0.01" class="form-control" value="0.00"></div>
+                <div class="col-md-4"><label class="form-label">Unit Price (₹)</label><input id="form-price" type="number" step="0.01" class="form-control" value="0.00"></div>
                 <div class="col-md-4"><label class="form-label">Warehouse</label><input id="form-warehouse" class="form-control" value="Main"></div>
             </div>`;
     } else if (module === 'employees') {
@@ -559,13 +559,13 @@ function showAddForm(module) {
     } else if (module === 'sales' || module === 'purchases') {
         fieldsHtml = `
             <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">Total Amount ($)</label><input id="form-amount" type="number" step="0.01" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Total Amount (₹)</label><input id="form-amount" type="number" step="0.01" class="form-control" required></div>
                 <div class="col-md-6"><label class="form-label">Notes</label><input id="form-notes" class="form-control"></div>
             </div>`;
     } else if (module === 'invoices') {
         fieldsHtml = `
             <div class="row g-3">
-                <div class="col-md-6"><label class="form-label">Total Amount ($)</label><input id="form-amount" type="number" step="0.01" class="form-control" required></div>
+                <div class="col-md-6"><label class="form-label">Total Amount (₹)</label><input id="form-amount" type="number" step="0.01" class="form-control" required></div>
                 <div class="col-md-6"><label class="form-label">Due Date</label><input id="form-duedate" type="date" class="form-control" required></div>
             </div>`;
     } else if (module === 'projects') {
@@ -573,7 +573,7 @@ function showAddForm(module) {
             <div class="row g-3">
                 <div class="col-md-6"><label class="form-label">Project Name</label><input id="form-name" class="form-control" required></div>
                 <div class="col-md-6"><label class="form-label">Description</label><input id="form-desc" class="form-control"></div>
-                <div class="col-md-6"><label class="form-label">Budget ($)</label><input id="form-budget" type="number" step="0.01" class="form-control" value="0.00"></div>
+                <div class="col-md-6"><label class="form-label">Budget (₹)</label><input id="form-budget" type="number" step="0.01" class="form-control" value="0.00"></div>
             </div>`;
     } else if (module === 'tasks') {
         fieldsHtml = `
@@ -596,9 +596,9 @@ function showAddForm(module) {
             <div class="row g-3">
                 <div class="col-md-6"><label class="form-label">Employee ID</label><input id="form-emp-id" type="number" class="form-control" required></div>
                 <div class="col-md-6"><label class="form-label">Month</label><input id="form-month" class="form-control" placeholder="July 2026" required></div>
-                <div class="col-md-4"><label class="form-label">Basic Salary ($)</label><input id="form-basic" type="number" step="0.01" class="form-control" required></div>
-                <div class="col-md-4"><label class="form-label">Allowances ($)</label><input id="form-allowances" type="number" step="0.01" class="form-control" value="0.00"></div>
-                <div class="col-md-4"><label class="form-label">Deductions ($)</label><input id="form-deductions" type="number" step="0.01" class="form-control" value="0.00"></div>
+                <div class="col-md-4"><label class="form-label">Basic Salary (₹)</label><input id="form-basic" type="number" step="0.01" class="form-control" required></div>
+                <div class="col-md-4"><label class="form-label">Allowances (₹)</label><input id="form-allowances" type="number" step="0.01" class="form-control" value="0.00"></div>
+                <div class="col-md-4"><label class="form-label">Deductions (₹)</label><input id="form-deductions" type="number" step="0.01" class="form-control" value="0.00"></div>
             </div>`;
     } else if (module === 'attendance') {
         fieldsHtml = `
