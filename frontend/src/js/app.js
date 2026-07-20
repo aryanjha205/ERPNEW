@@ -1199,17 +1199,6 @@ function toggleMicRecording() {
             if (statusEl) statusEl.classList.remove('d-none');
             if (micBtn) micBtn.classList.add('recording');
             if (timerCountEl) timerCountEl.textContent = '4';
-
-            // Initial 10s max window if user doesn't speak at all
-            clearInterval(voiceCountdownTimer);
-            voiceCountdownTimer = setInterval(() => {
-                secondsRemaining--;
-                if (timerCountEl) timerCountEl.textContent = secondsRemaining;
-                if (secondsRemaining <= 0) {
-                    clearInterval(voiceCountdownTimer);
-                    stopMicRecordingAndSend();
-                }
-            }, 1000);
         };
 
         speechRecognizer.onresult = event => {
@@ -1221,14 +1210,14 @@ function toggleMicRecording() {
             const inputEl = document.getElementById('ai-chat-input');
             if (inputEl) inputEl.value = accumulatedTranscript;
 
-            // Reset 4-second auto-send countdown whenever speech is detected
+            // Start or reset 4-second auto-send countdown AFTER speech is detected
             secondsRemaining = 4;
-            if (timerCountEl) timerCountEl.textContent = secondsRemaining;
+            if (timerCountEl) timerCountEl.textContent = '4';
 
             clearInterval(voiceCountdownTimer);
             voiceCountdownTimer = setInterval(() => {
                 secondsRemaining--;
-                if (timerCountEl) timerCountEl.textContent = secondsRemaining;
+                if (timerCountEl) timerCountEl.textContent = Math.max(0, secondsRemaining);
                 if (secondsRemaining <= 0) {
                     clearInterval(voiceCountdownTimer);
                     stopMicRecordingAndSend();
@@ -1241,7 +1230,7 @@ function toggleMicRecording() {
         };
 
         speechRecognizer.onend = () => {
-            if (isListening && secondsRemaining > 0) {
+            if (isListening && !accumulatedTranscript) {
                 try { speechRecognizer.start(); } catch (e) {}
             }
         };
@@ -1271,8 +1260,6 @@ function stopMicRecordingAndSend() {
     if (finalPrompt) {
         if (inputEl) inputEl.value = '';
         sendAiPrompt(finalPrompt);
-    } else {
-        showToast('No speech detected. Please try speaking again.', 'info');
     }
 }
 
