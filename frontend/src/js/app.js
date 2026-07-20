@@ -886,7 +886,14 @@ async function fetchAdminData() {
 function renderAdminView(view) {
     if (!adminData.overview) return;
     document.getElementById('admin-content').innerHTML = view === 'companies' ? adminCompaniesView() : adminOverviewView();
-    if (view === 'companies') document.getElementById('company-search')?.addEventListener('input', event => renderCompanyRows(event.target.value));
+    if (view === 'companies') {
+        renderCompanyRows();
+        const searchInput = document.getElementById('company-search');
+        const typeSelect = document.getElementById('company-type-filter');
+        const updateRows = () => renderCompanyRows(searchInput?.value || '', typeSelect?.value || '');
+        searchInput?.addEventListener('input', updateRows);
+        typeSelect?.addEventListener('change', updateRows);
+    }
 }
 
 function adminOverviewView() {
@@ -895,8 +902,44 @@ function adminOverviewView() {
 }
 
 function adminCompaniesView() {
-    return `<div class="page-header admin-header"><div><span class="eyebrow">Tenant directory</span><h2>Companies</h2><p class="text-muted mb-0">Search, activate, or suspend individual workspaces.</p></div><button class="btn btn-primary" onclick="openRegisterModal()"><i class="bi bi-plus-lg me-1"></i>New company</button></div><section class="card"><div class="directory-toolbar"><div class="search-field"><i class="bi bi-search"></i><input id="company-search" placeholder="Search by company, owner, email, or code"></div><span class="text-muted small">${adminData.companies.length} total companies</span></div><div class="table-responsive"><table class="table table-hover admin-table mb-0"><thead><tr><th>Workspace</th><th>Owner</th><th>Company code</th><th>Type</th><th>Status</th><th class="text-end">Actions</th></tr></thead><tbody id="companies-table-body"></tbody></table></div></section>`;
-    renderCompanyRows();
+    const types = ['All Company Types', 'Manufacturing', 'Chemical Industry', 'Pharmaceutical', 'Retail', 'Wholesale', 'Trading', 'Construction', 'Hospital', 'School', 'College', 'Restaurant', 'Hotel', 'Logistics', 'Warehouse', 'Agriculture', 'Textile', 'Automobile', 'Electronics', 'IT Company', 'Service Business', 'Custom Business'];
+    return `<div class="page-header admin-header">
+        <div>
+            <span class="eyebrow">Tenant directory</span>
+            <h2>Companies</h2>
+            <p class="text-muted mb-0">Search, filter by industry template, activate, or suspend workspaces.</p>
+        </div>
+        <button class="btn btn-primary" onclick="openRegisterModal()"><i class="bi bi-plus-lg me-1"></i>New company</button>
+    </div>
+    <section class="card">
+        <div class="directory-toolbar d-flex flex-wrap gap-2 align-items-center justify-content-between p-3 border-bottom">
+            <div class="d-flex flex-wrap gap-2 flex-grow-1" style="max-width: 700px;">
+                <div class="search-field flex-grow-1" style="min-width: 250px;">
+                    <i class="bi bi-search"></i>
+                    <input id="company-search" class="form-control" placeholder="Search by company, owner, email, or code">
+                </div>
+                <select id="company-type-filter" class="form-select" style="width: 220px;">
+                    ${types.map(t => `<option value="${t === 'All Company Types' ? '' : t}">${t}</option>`).join('')}
+                </select>
+            </div>
+            <span class="text-muted small">${adminData.companies.length} total companies</span>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover admin-table mb-0 align-middle">
+                <thead>
+                    <tr>
+                        <th>Workspace</th>
+                        <th>Owner</th>
+                        <th>Company code</th>
+                        <th>Type</th>
+                        <th>Status</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="companies-table-body"></tbody>
+            </table>
+        </div>
+    </section>`;
 }
 
 let registrationData = {};
@@ -946,11 +989,41 @@ async function registerCompany(event) { event.preventDefault(); const otp = docu
 async function createCompanyAsSuperAdmin(event) { event.preventDefault(); const data = { company_name: document.getElementById('reg-cname').value.trim(), company_type: document.getElementById('reg-ctype').value, owner_name: document.getElementById('reg-oname').value.trim(), business_email: document.getElementById('reg-email').value.trim(), mobile_number: document.getElementById('reg-mobile').value.trim(), password: document.getElementById('reg-pass').value }; const button = event.currentTarget.querySelector('button[type="submit"]'); button.disabled = true; button.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creating workspace…'; try { const response = await fetch(API + '/companies/admin/create', { method:'POST', headers:{'Content-Type':'application/json', Authorization:`Bearer ${getSession().token}`}, body:JSON.stringify(data) }); const result = await readApiResponse(response); if (!response.ok) throw new Error(result.detail || 'Could not create workspace'); document.getElementById('register-modal-body').innerHTML = `<div class="text-center py-2"><i class="bi bi-check-circle-fill text-success fs-1"></i><h4 class="mt-3">Workspace created</h4><p class="text-muted small">The company administrator can now sign in. Company code:</p><div class="bg-light border rounded p-3 font-mono fs-4">${escapeHtml(result.company_code)}</div><button data-bs-dismiss="modal" class="btn btn-primary w-100 mt-3" onclick="afterRegistration()">Done</button></div>`; } catch (error) { showToast(error.message, 'error'); button.disabled = false; button.textContent = 'Create workspace'; } }
 function afterRegistration() { if (getSession()?.role === 'super_admin') fetchAdminData(); else showToast('Your workspace is ready. Sign in as Company administrator.', 'success'); }
 async function fetchCompanies() { return fetchAdminData(); }
-function renderCompanyRows(filter = '') {
+function renderCompanyRows(textFilter = '', typeFilter = '') {
     const tbody = document.getElementById('companies-table-body');
     if (!tbody) return;
-    const query = filter.trim().toLowerCase();
-    const companies = adminData.companies.filter(company => [company.company_name, company.owner_name, company.business_email, company.company_code, company.company_type].join(' ').toLowerCase().includes(query));
-    tbody.innerHTML = companies.length ? companies.map(company => `<tr><td><div class="company-cell"><span class="company-avatar">${escapeHtml(company.company_name.slice(0, 1).toUpperCase())}</span><div><strong>${escapeHtml(company.company_name)}</strong><small>${escapeHtml(company.business_email)}</small></div></div></td><td>${escapeHtml(company.owner_name)}</td><td><code>${escapeHtml(company.company_code)}</code></td><td>${escapeHtml(company.company_type)}</td><td><span class="status-pill ${company.is_active ? 'status-active' : 'status-suspended'}"><i class="bi bi-circle-fill"></i>${company.is_active ? 'Active' : 'Pending approval'}</span></td><td class="text-end"><button class="btn btn-sm ${company.is_active ? 'btn-outline-danger' : 'btn-outline-success'}" onclick="setCompanyStatus(${company.id}, ${!company.is_active})">${company.is_active ? 'Suspend' : 'Approve'}</button></td></tr>`).join('') : '<tr><td colspan="6" class="text-center p-5 text-muted">No companies match this search.</td></tr>';
+    const query = textFilter.trim().toLowerCase();
+    const selectedType = typeFilter.trim().toLowerCase();
+    const companies = adminData.companies.filter(company => {
+        const matchesText = [company.company_name, company.owner_name, company.business_email, company.company_code, company.company_type].join(' ').toLowerCase().includes(query);
+        const matchesType = !selectedType || (company.company_type && company.company_type.toLowerCase() === selectedType);
+        return matchesText && matchesType;
+    });
+    tbody.innerHTML = companies.length ? companies.map(company => `
+        <tr>
+            <td>
+                <div class="company-cell d-flex align-items-center gap-2">
+                    <span class="company-avatar badge bg-primary rounded-circle p-2 fs-6" style="width:36px;height:36px;display:flex;align-items:center;justify-content:center;">${escapeHtml(company.company_name.slice(0, 1).toUpperCase())}</span>
+                    <div>
+                        <strong>${escapeHtml(company.company_name)}</strong>
+                        <br><small class="text-muted">${escapeHtml(company.business_email)}</small>
+                    </div>
+                </div>
+            </td>
+            <td>${escapeHtml(company.owner_name)}</td>
+            <td><code class="user-select-all">${escapeHtml(company.company_code)}</code></td>
+            <td><span class="badge bg-secondary-subtle text-secondary-emphasis">${escapeHtml(company.company_type)}</span></td>
+            <td>
+                <span class="status-pill ${company.is_active ? 'status-active text-success' : 'status-suspended text-danger'} fw-semibold">
+                    <i class="bi bi-circle-fill me-1 small"></i>${company.is_active ? 'Active' : 'Pending approval'}
+                </span>
+            </td>
+            <td class="text-end">
+                <button class="btn btn-sm ${company.is_active ? 'btn-outline-danger' : 'btn-outline-success'}" onclick="setCompanyStatus(${company.id}, ${!company.is_active})">
+                    ${company.is_active ? 'Suspend' : 'Approve'}
+                </button>
+            </td>
+        </tr>`).join('') : '<tr><td colspan="6" class="text-center p-5 text-muted">No companies match your search or filter.</td></tr>';
 }
 async function setCompanyStatus(id, isActive) { if (!window.confirm(`Are you sure you want to ${isActive ? 'approve' : 'suspend'} this company?`)) return; try { const response = await fetch(`${API}/companies/${id}/status?is_active=${isActive}`, { method:'PATCH', headers:{Authorization:`Bearer ${getSession().token}`} }); const data = await readApiResponse(response); if (!response.ok) throw new Error(data.detail || 'Could not update company'); showToast(`Company ${isActive ? 'approved' : 'suspended'}.`, 'success'); fetchAdminData(); } catch (error) { showToast(error.message, 'error'); } }
+
