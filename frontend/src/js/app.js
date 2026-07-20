@@ -1192,15 +1192,15 @@ function toggleMicRecording() {
         speechRecognizer.interimResults = true;
         speechRecognizer.lang = 'en-IN';
 
-        let secondsRemaining = 5;
+        let secondsRemaining = 4;
 
         speechRecognizer.onstart = () => {
             isListening = true;
             if (statusEl) statusEl.classList.remove('d-none');
             if (micBtn) micBtn.classList.add('recording');
-            if (timerCountEl) timerCountEl.textContent = secondsRemaining;
+            if (timerCountEl) timerCountEl.textContent = '4';
 
-            // 5-second countdown timer
+            // Initial 10s max window if user doesn't speak at all
             clearInterval(voiceCountdownTimer);
             voiceCountdownTimer = setInterval(() => {
                 secondsRemaining--;
@@ -1220,6 +1220,20 @@ function toggleMicRecording() {
             accumulatedTranscript = currentText.trim();
             const inputEl = document.getElementById('ai-chat-input');
             if (inputEl) inputEl.value = accumulatedTranscript;
+
+            // Reset 4-second auto-send countdown whenever speech is detected
+            secondsRemaining = 4;
+            if (timerCountEl) timerCountEl.textContent = secondsRemaining;
+
+            clearInterval(voiceCountdownTimer);
+            voiceCountdownTimer = setInterval(() => {
+                secondsRemaining--;
+                if (timerCountEl) timerCountEl.textContent = secondsRemaining;
+                if (secondsRemaining <= 0) {
+                    clearInterval(voiceCountdownTimer);
+                    stopMicRecordingAndSend();
+                }
+            }, 1000);
         };
 
         speechRecognizer.onerror = event => {
