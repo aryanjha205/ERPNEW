@@ -1188,11 +1188,9 @@ function toggleMicRecording() {
     try {
         accumulatedTranscript = '';
         speechRecognizer = new SpeechRecognition();
-        speechRecognizer.continuous = true;
+        speechRecognizer.continuous = false;
         speechRecognizer.interimResults = true;
         speechRecognizer.lang = 'en-IN';
-
-        let secondsRemaining = 4;
 
         speechRecognizer.onstart = () => {
             isListening = true;
@@ -1209,35 +1207,52 @@ function toggleMicRecording() {
             accumulatedTranscript = currentText.trim();
             const inputEl = document.getElementById('ai-chat-input');
             if (inputEl) inputEl.value = accumulatedTranscript;
-
-            // Start or reset 4-second auto-send countdown AFTER speech is detected
-            secondsRemaining = 4;
-            if (statusTextEl) statusTextEl.innerHTML = `<span class="spinner-grow spinner-grow-sm me-1 text-primary"></span> Speech detected! Sending in <strong>${secondsRemaining}s</strong>…`;
-
-            clearInterval(voiceCountdownTimer);
-            voiceCountdownTimer = setInterval(() => {
-                secondsRemaining--;
-                if (statusTextEl) statusTextEl.innerHTML = `<span class="spinner-grow spinner-grow-sm me-1 text-primary"></span> Speech detected! Sending in <strong>${Math.max(0, secondsRemaining)}s</strong>…`;
-                if (secondsRemaining <= 0) {
-                    clearInterval(voiceCountdownTimer);
-                    stopMicRecordingAndSend();
-                }
-            }, 1000);
+            if (statusTextEl && accumulatedTranscript) {
+                statusTextEl.innerHTML = `<span class="spinner-grow spinner-grow-sm me-1 text-primary"></span> Voice heard: "${escapeHtml(accumulatedTranscript)}"`;
+            }
         };
 
         speechRecognizer.onerror = event => {
-            console.warn('Speech recognition warning:', event.error);
+            console.warn('Speech recognition error:', event.error);
+            if (event.error === 'not-allowed' || event.error === 'service-not-allowed') {
+                showToast('Microphone access blocked. Please allow mic permission in browser settings.', 'error');
+                stopMicRecording();
+            } else if (event.error === 'no-speech') {
+                if (statusTextEl && !accumulatedTranscript) {
+                    statusTextEl.innerHTML = '<span class="pulse-dot me-1"></span> Listening… Speak clearly into microphone';
+                }
+            }
         };
 
         speechRecognizer.onend = () => {
-            if (isListening && !accumulatedTranscript) {
-                try { speechRecognizer.start(); } catch (e) {}
+            if (accumulatedTranscript) {
+                // Speech captured! Start 4-second send countdown
+                let secondsRemaining = 4;
+                if (statusTextEl) statusTextEl.innerHTML = `<span class="spinner-grow spinner-grow-sm me-1 text-primary"></span> Auto-sending in <strong>${secondsRemaining}s</strong>…`;
+                
+                clearInterval(voiceCountdownTimer);
+                voiceCountdownTimer = setInterval(() => {
+                    secondsRemaining--;
+                    if (statusTextEl) statusTextEl.innerHTML = `<span class="spinner-grow spinner-grow-sm me-1 text-primary"></span> Auto-sending in <strong>${Math.max(0, secondsRemaining)}s</strong>…`;
+                    if (secondsRemaining <= 0) {
+                        clearInterval(voiceCountdownTimer);
+                        stopMicRecordingAndSend();
+                    }
+                }, 1000);
+            } else if (isListening) {
+                // Keep listening if user hasn't spoken yet
+                try {
+                    speechRecognizer.start();
+                } catch (e) {
+                    stopMicRecording();
+                }
             }
         };
 
         speechRecognizer.start();
     } catch (err) {
-        showToast('Could not access microphone.', 'error');
+        showToast('Could not start microphone. Check browser permissions.', 'error');
+        stopMicRecording();
     }
 }
 
