@@ -48,6 +48,103 @@ function saveSession(data, remember = true) {
     store.setItem('erp_company_type', data.company_type || 'Custom Business');
 }
 
+function escapeHtml(value = '') {
+    return String(value).replace(/[&<>'"]/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' })[char]);
+}
+
+async function readApiResponse(response) {
+    const contentType = response.headers.get('content-type') || '';
+    let body;
+    if (contentType.includes('application/json')) {
+        body = await response.json();
+    } else {
+        body = await response.text();
+    }
+    if (!response.ok) {
+        const errorMsg = typeof body === 'object' && body.detail ? body.detail : (typeof body === 'string' && body ? body : 'The server could not complete this request. Please try again in a moment.');
+        throw new Error(errorMsg);
+    }
+    return body;
+}
+
+function renderLogin() {
+    syncVoiceButton(false);
+    document.getElementById('app-root').innerHTML = `
+      <div class="auth-wrapper"><div class="auth-shell">
+        <section class="auth-aside"><div class="brand-lockup"><span class="brand-mark"><i class="bi bi-boxes"></i></span><span>Nexus</span></div><div class="auth-aside-copy"><span class="eyebrow">AI-native operations</span><h1>Run every part of your business from one calm workspace.</h1><p>Secure, multi-tenant ERP for the teams building what comes next.</p></div><div class="auth-feature"><i class="bi bi-shield-check"></i><div><strong>Private by design</strong><span>Every workspace is securely isolated.</span></div></div></section>
+        <section class="auth-container"><div class="auth-mobile-brand"><span class="brand-mark"><i class="bi bi-boxes"></i></span> Nexus</div><div class="auth-header"><span class="eyebrow">Secure sign in</span><h2>Welcome back</h2><p>Use your workspace credentials to continue.</p></div>
+          <form id="login-form">
+            <div class="mb-3"><label class="form-label">Access type</label><select id="login-type" class="form-select"><option value="employee">Employee</option><option value="company_admin">Company administrator</option><option value="super_admin">Platform administrator</option></select></div>
+            <div class="mb-3" id="company-code-field"><label class="form-label">Company code <span class="text-muted fw-normal">(optional)</span></label><input id="company-code" class="form-control text-uppercase" placeholder="COMP-X8A7K3" autocomplete="organization"></div>
+            <div class="mb-3" id="email-field"><label class="form-label">Email address</label><input id="login-email" type="email" class="form-control" autocomplete="email" placeholder="you@company.com" required></div>
+            <div class="mb-3"><label class="form-label d-flex justify-content-between" id="password-label">Password <button type="button" id="toggle-password" class="link-button">Show</button></label><input id="login-password" type="password" class="form-control" autocomplete="current-password" required></div>
+            <label class="check-row mb-4"><input id="remember-session" type="checkbox" checked><span>Keep me signed in on this device</span></label>
+            <button class="btn btn-primary w-100 btn-auth" type="submit"><span>Sign in securely</span><i class="bi bi-arrow-right"></i></button>
+          </form>
+          <div class="auth-divider"><span>New to Nexus?</span></div>
+          <button type="button" class="btn btn-outline-secondary w-100 mb-2" onclick="openRegisterModal()"><i class="bi bi-building-add me-2"></i>Create a company workspace</button>
+          <button type="button" class="btn btn-outline-info w-100" onclick="openEmployeeRegisterModal()"><i class="bi bi-person-plus me-2"></i>Register as Employee</button>
+          <p class="auth-help">Employees should get a company code from their administrator.</p>
+        </section></div></div>`;
+    const type = document.getElementById('login-type');
+    if (type) type.addEventListener('change', updateLoginFields);
+    document.getElementById('login-form')?.addEventListener('submit', handleLogin);
+    document.getElementById('toggle-password')?.addEventListener('click', () => {
+        const input = document.getElementById('login-password');
+        if (input) {
+            input.type = input.type === 'password' ? 'text' : 'password';
+            document.getElementById('toggle-password').textContent = input.type === 'password' ? 'Show' : 'Hide';
+        }
+    });
+    updateLoginFields();
+}
+
+function updateLoginFields() {
+    const typeEl = document.getElementById('login-type');
+    if (!typeEl) return;
+    const type = typeEl.value;
+    const email = document.getElementById('email-field');
+    const code = document.getElementById('company-code-field');
+    const passLabel = document.getElementById('password-label');
+    if (passLabel && passLabel.childNodes[0]) passLabel.childNodes[0].nodeValue = type === 'super_admin' ? 'Secure PIN ' : 'Password ';
+    if (email) email.hidden = type === 'super_admin';
+    if (code) code.hidden = type !== 'employee';
+    const loginEmail = document.getElementById('login-email');
+    if (loginEmail) loginEmail.required = type !== 'super_admin';
+}
+
+async function handleLogin(event) {
+    event.preventDefault();
+    const type = document.getElementById('login-type').value;
+    const password = document.getElementById('login-password').value;
+    const email = document.getElementById('login-email')?.value.trim() || '';
+    const companyCode = document.getElementById('company-code')?.value.trim().toUpperCase() || '';
+    const button = event.currentTarget.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span><span>Signing in…</span>';
+    try {
+        let endpoint, body;
+        if (type === 'super_admin') { endpoint = '/auth/super-admin/login'; body = { pin: password }; }
+        else if (type === 'company_admin') { endpoint = '/auth/company-admin/login'; body = { email, password }; }
+        else if (companyCode) { endpoint = '/auth/employee/login-code'; body = { company_code: companyCode, employee_email: email, password }; }
+        else { endpoint = '/auth/employee/login'; body = { email, password }; }
+        const response = await fetch(API + endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        const data = await readApiResponse(response);
+        if (!response.ok) throw new Error(data.detail || 'Sign in failed');
+        saveSession(data, document.getElementById('remember-session')?.checked ?? true);
+        renderWorkspace(getSession());
+    } catch (error) { showToast(error.message, 'error'); }
+    finally { button.disabled = false; button.innerHTML = '<span>Sign in securely</span><i class="bi bi-arrow-right ms-2"></i>'; }
+}
+
+function toggleTheme() {
+    const current = document.documentElement.getAttribute('data-theme');
+    const target = current === 'dark' ? 'light' : 'dark';
+    document.documentElement.setAttribute('data-theme', target);
+    localStorage.setItem('erp_theme', target);
+    showToast(`Switched to ${target} mode`, 'success');
+}
+
 const COMPANY_TYPE_MODULES = {
     'Manufacturing': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Projects', 'Tasks', 'Notifications', 'Reports', 'Settings'],
     'Chemical Industry': ['Dashboard', 'Employees', 'Departments', 'Attendance', 'Leaves', 'Payroll', 'Suppliers', 'Inventory', 'Sales', 'Purchases', 'Invoices', 'Notifications', 'Reports', 'Settings'],
