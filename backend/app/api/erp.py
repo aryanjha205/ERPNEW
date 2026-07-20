@@ -429,7 +429,8 @@ class VoiceCommandRequest(BaseModel):
 @router.post("/ai-voice")
 def process_voice_command(data: VoiceCommandRequest, user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
     cid = _cid(user)
+    role = user.get("role", "company_admin") if isinstance(user, dict) else "company_admin"
     provider = get_ai_voice_provider()
-    return provider.process_command(transcript=data.transcript, company_id=cid, db=db)
+    return provider.process_command(transcript=data.transcript, company_id=cid, db=db, user_role=role)
 
 

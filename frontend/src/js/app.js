@@ -1039,3 +1039,156 @@ function renderCompanyRows(textFilter = '', typeFilter = '') {
 }
 async function setCompanyStatus(id, isActive) { if (!window.confirm(`Are you sure you want to ${isActive ? 'approve' : 'suspend'} this company?`)) return; try { const response = await fetch(`${API}/companies/${id}/status?is_active=${isActive}`, { method:'PATCH', headers:{Authorization:`Bearer ${getSession().token}`} }); const data = await readApiResponse(response); if (!response.ok) throw new Error(data.detail || 'Could not update company'); showToast(`Company ${isActive ? 'approved' : 'suspended'}.`, 'success'); fetchAdminData(); } catch (error) { showToast(error.message, 'error'); } }
 
+// ──────────────────────────── Centralized AI Voice & Intelligence Assistant ────────────────────────────
+let isListening = false;
+let speechRecognizer = null;
+
+function toggleVoiceAssistant() {
+    const modalEl = document.getElementById('aiAssistantModal');
+    if (!modalEl) return;
+    if (window.bootstrap?.Modal) {
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    } else {
+        modalEl.style.display = modalEl.style.display === 'block' ? 'none' : 'block';
+        modalEl.classList.toggle('show');
+    }
+    
+    // Bind listeners if not already bound
+    const form = document.getElementById('ai-chat-form');
+    if (form && !form.dataset.bound) {
+        form.dataset.bound = 'true';
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            const input = document.getElementById('ai-chat-input');
+            const val = input?.value.trim();
+            if (val) {
+                input.value = '';
+                sendAiPrompt(val);
+            }
+        });
+    }
+
+    const micBtn = document.getElementById('ai-mic-btn');
+    if (micBtn && !micBtn.dataset.bound) {
+        micBtn.dataset.bound = 'true';
+        micBtn.addEventListener('click', toggleMicRecording);
+    }
+}
+
+function toggleMicRecording() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+        showToast('Speech recognition is not supported in this browser. Please type your command.', 'warning');
+        return;
+    }
+    
+    const statusEl = document.getElementById('ai-voice-status');
+    const micBtn = document.getElementById('ai-mic-btn');
+
+    if (isListening && speechRecognizer) {
+        speechRecognizer.stop();
+        isListening = false;
+        if (statusEl) statusEl.classList.add('d-none');
+        if (micBtn) micBtn.classList.remove('btn-danger'), micBtn.classList.add('btn-outline-primary');
+        return;
+    }
+
+    try {
+        speechRecognizer = new SpeechRecognition();
+        speechRecognizer.continuous = false;
+        speechRecognizer.interimResults = false;
+        speechRecognizer.lang = 'en-IN';
+
+        speechRecognizer.onstart = () => {
+            isListening = true;
+            if (statusEl) statusEl.classList.remove('d-none');
+            if (micBtn) micBtn.classList.remove('btn-outline-primary'), micBtn.classList.add('btn-danger');
+        };
+
+        speechRecognizer.onresult = event => {
+            const transcript = event.results[0][0].transcript;
+            if (transcript) {
+                sendAiPrompt(transcript);
+            }
+        };
+
+        speechRecognizer.onerror = event => {
+            console.warn('Speech recognition error:', event.error);
+            showToast(`Speech recognition: ${event.error}`, 'error');
+        };
+
+        speechRecognizer.onend = () => {
+            isListening = false;
+            if (statusEl) statusEl.classList.add('d-none');
+            if (micBtn) micBtn.classList.remove('btn-danger'), micBtn.classList.add('btn-outline-primary');
+        };
+
+        speechRecognizer.start();
+    } catch (err) {
+        showToast('Could not access microphone.', 'error');
+    }
+}
+
+async function sendAiPrompt(promptText) {
+    const messagesBox = document.getElementById('ai-chat-messages');
+    if (!messagesBox) return;
+
+    // Append User Message
+    const userBubble = document.createElement('div');
+    userBubble.className = 'chat-bubble-user';
+    userBubble.textContent = promptText;
+    messagesBox.appendChild(userBubble);
+    messagesBox.scrollTop = messagesBox.scrollHeight;
+
+    // Append AI Loading Indicator
+    const aiBubble = document.createElement('div');
+    aiBubble.className = 'chat-bubble-ai';
+    aiBubble.innerHTML = '<span class="spinner-border spinner-border-sm me-2 text-primary"></span><span>Analyzing workspace context…</span>';
+    messagesBox.appendChild(aiBubble);
+    messagesBox.scrollTop = messagesBox.scrollHeight;
+
+    try {
+        const response = await api('/erp/ai-voice', {
+            method: 'POST',
+            body: { transcript: promptText }
+        });
+
+        const speechText = response.speech || 'Action completed.';
+        aiBubble.innerHTML = `<i class="bi bi-robot me-1 text-primary"></i> ${escapeHtml(speechText)}`;
+        messagesBox.scrollTop = messagesBox.scrollHeight;
+
+        // Speak aloud if TTS toggle is checked
+        const ttsToggle = document.getElementById('ai-tts-toggle');
+        if (ttsToggle && ttsToggle.checked) {
+            speakResponse(speechText);
+        }
+
+        // Execute returned action
+        if (response.action === 'navigate' && response.target) {
+            loadModule(response.target);
+            // Highlight active sidebar item
+            document.querySelectorAll('[data-module]').forEach(item => {
+                if (item.dataset.module === response.target) item.classList.add('active');
+                else item.classList.remove('active');
+            });
+        } else if (response.action === 'refresh' && response.target) {
+            loadModule(response.target);
+        }
+    } catch (err) {
+        aiBubble.innerHTML = `<i class="bi bi-exclamation-triangle-fill me-1 text-danger"></i> ${escapeHtml(err.message || 'Could not process AI command.')}`;
+    }
+}
+
+function speakResponse(text) {
+    if (!('speechSynthesis' in window)) return;
+    try {
+        window.speechSynthesis.cancel(); // Cancel any ongoing speech
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.0;
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+    } catch (err) {
+        console.warn('TTS Speech Synthesis error:', err);
+    }
+}
+

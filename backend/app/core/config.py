@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: Optional[str] = None
     SMTP_HOST: Optional[str] = "smtp.gmail.com"
     SMTP_PORT: Optional[int] = 587
+    OPENROUTER_API_KEY: Optional[str] = None
+    OPENROUTER_MODEL: Optional[str] = "google/gemma-4-26b-a4b-it:free"
 
     class Config:
         env_file = ".env"
