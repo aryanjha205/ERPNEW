@@ -1,14 +1,65 @@
 const API = '/api';
 let recognition;
+let refreshingSession = null;
+let deferredInstallPrompt = null;
 
 function initApp() {
     const session = getSession();
     session ? renderWorkspace(session) : renderLogin();
     document.getElementById('voice-btn')?.addEventListener('click', toggleVoiceAssistant);
     syncVoiceButton(Boolean(session));
+    applyThemePreference();
+    registerServiceWorker();
+    bindInstallPrompt();
+    bindConnectionStatus();
     document.getElementById('registerCompanyModal')?.addEventListener('click', event => {
         if (!window.bootstrap && (event.target.matches('[data-bs-dismiss="modal"]') || event.target.closest('[data-bs-dismiss="modal"]'))) closeRegisterModal();
     });
+}
+
+function applyThemePreference() {
+    const savedTheme = localStorage.getItem('erp_theme') || 'light';
+    document.documentElement.setAttribute('data-theme', savedTheme);
+}
+
+function registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js').catch(err => console.warn('SW registration failed:', err));
+        });
+    }
+}
+
+function bindInstallPrompt() {
+    window.addEventListener('beforeinstallprompt', event => {
+        event.preventDefault();
+        deferredInstallPrompt = event;
+        const root = document.getElementById('app-root');
+        if (root && !document.getElementById('install-prompt-bar')) {
+            const bar = document.createElement('div');
+            bar.id = 'install-prompt-bar';
+            bar.className = 'install-banner';
+            bar.innerHTML = '<div><strong>Install Nexus</strong><span>Get faster access and offline support.</span></div><button class="btn btn-sm btn-primary">Install</button>';
+            bar.querySelector('button').addEventListener('click', async () => {
+                if (!deferredInstallPrompt) return;
+                deferredInstallPrompt.prompt();
+                await deferredInstallPrompt.userChoice;
+                deferredInstallPrompt = null;
+                bar.remove();
+            });
+            document.body.appendChild(bar);
+        }
+    });
+}
+
+function bindConnectionStatus() {
+    const update = () => {
+        document.body.classList.toggle('is-offline', !navigator.onLine);
+        if (!navigator.onLine) showToast('You are offline. Cached screens remain available.', 'info');
+    };
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    update();
 }
 
 function syncVoiceButton(isAuthenticated = Boolean(getSession())) {
@@ -22,6 +73,7 @@ function getSession() {
     const role = store.getItem('erp_role');
     return token && role ? {
         token,
+        refreshToken: store.getItem('erp_refresh_token') || '',
         role,
         companyName: store.getItem('erp_company_name') || 'Workspace',
         companyCode: store.getItem('erp_company_code') || '',
@@ -29,13 +81,18 @@ function getSession() {
     } : null;
 }
 
+function getSessionStore() {
+    return localStorage.getItem('erp_token') ? localStorage : sessionStorage;
+}
+
 function saveSession(data, remember = true) {
     const store = remember ? localStorage : sessionStorage;
-    ['erp_token', 'erp_role', 'erp_company_name', 'erp_company_code', 'erp_company_type'].forEach(k => {
+    ['erp_token', 'erp_refresh_token', 'erp_role', 'erp_company_name', 'erp_company_code', 'erp_company_type'].forEach(k => {
         localStorage.removeItem(k);
         sessionStorage.removeItem(k);
     });
     store.setItem('erp_token', data.access_token);
+    if (data.refresh_token) store.setItem('erp_refresh_token', data.refresh_token);
     store.setItem('erp_role', data.role);
     store.setItem('erp_company_name', data.company_name || 'Nexus ERP');
     store.setItem('erp_company_code', data.company_code || '');
@@ -171,6 +228,7 @@ function renderWorkspace(session) {
     
     root.innerHTML = `
       <div class="app-layout">
+                <div class="sidebar-overlay" onclick="closeSidebar()"></div>
         <aside class="sidebar">
           <div class="sidebar-brand">
             <span class="sidebar-brand-icon"><i class="bi bi-boxes"></i></span>
@@ -191,7 +249,7 @@ function renderWorkspace(session) {
           </div>
         </aside>
         <main class="main-content">
-          <button class="btn btn-ghost mobile-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open')"><i class="bi bi-list"></i></button>
+                    <button class="btn btn-ghost mobile-menu-btn" onclick="toggleSidebar()"><i class="bi bi-list"></i></button>
           <div id="workspace-content"></div>
         </main>
       </div>`;
@@ -199,11 +257,25 @@ function renderWorkspace(session) {
         root.querySelectorAll('[data-module]').forEach(item => item.classList.remove('active'));
         button.classList.add('active');
         loadModule(button.dataset.module);
+        closeSidebar();
     }));
-    // Apply initialized theme
-    const savedTheme = localStorage.getItem('erp_theme') || 'light';
-    document.documentElement.setAttribute('data-theme', savedTheme);
     loadModule('dashboard');
+}
+
+function toggleSidebar() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.querySelector('.sidebar-overlay');
+    if (!sidebar || !overlay) return;
+    sidebar.classList.toggle('open');
+    overlay.classList.toggle('show', sidebar.classList.contains('open'));
+}
+
+function closeSidebar() {
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.querySelector('.sidebar-overlay');
+    if (!sidebar || !overlay) return;
+    sidebar.classList.remove('open');
+    overlay.classList.remove('show');
 }
 
 function moduleIcon(name) {
@@ -236,10 +308,41 @@ async function api(path, options = {}) {
         options.body = JSON.stringify(options.body);
     }
     const response = await fetch(API + path, { ...options, headers });
-    if (response.status === 401) { logout(); throw new Error('Your session has expired.'); }
+    if (response.status === 401 && session?.refreshToken && path !== '/auth/refresh' && path !== '/auth/logout') {
+        const refreshed = await refreshSession();
+        if (refreshed) {
+            return api(path, options);
+        }
+        logout();
+        throw new Error('Your session has expired.');
+    }
     const data = await readApiResponse(response);
     if (!response.ok) throw new Error(data.detail || 'Request failed');
     return data;
+}
+
+async function refreshSession() {
+    if (refreshingSession) return refreshingSession;
+    const session = getSession();
+    if (!session?.refreshToken) return false;
+    refreshingSession = fetch(API + '/auth/refresh', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: session.refreshToken })
+    }).then(async response => {
+        if (!response.ok) return false;
+        const data = await readApiResponse(response);
+        saveSession({
+            access_token: data.access_token,
+            refresh_token: data.refresh_token || session.refreshToken,
+            role: data.role || session.role,
+            company_name: data.company_name || session.companyName,
+            company_code: data.company_code || session.companyCode,
+            company_type: data.company_type || session.companyType
+        }, getSessionStore() === localStorage);
+        return true;
+    }).catch(() => false).finally(() => { refreshingSession = null; });
+    return refreshingSession;
 }
 
 async function loadModule(module) {
@@ -1267,18 +1370,28 @@ function showToast(message, type = 'info') {
 
 function logout() {
     if (recognition) recognition.stop();
+    const session = getSession();
+    if (session?.refreshToken) {
+        fetch(API + '/auth/logout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refresh_token: session.refreshToken })
+        }).catch(() => {});
+    }
     [localStorage, sessionStorage].forEach(store => {
         store.removeItem('erp_token');
+        store.removeItem('erp_refresh_token');
         store.removeItem('erp_role');
         store.removeItem('erp_company_name');
         store.removeItem('erp_company_code');
+        store.removeItem('erp_company_type');
     });
     renderLogin();
 }
 
 function renderSuperAdminDashboard() {
     const root = document.getElementById('app-root');
-    root.innerHTML = `<div class="app-layout admin-layout"><aside class="sidebar"><div class="sidebar-brand"><span class="sidebar-brand-icon"><i class="bi bi-shield-lock"></i></span><div><h5>Nexus Control</h5><small>Platform administrator</small></div></div><div class="sidebar-section"><p class="sidebar-section-title">Platform</p><nav class="sidebar-nav"><button class="sidebar-link active" data-admin-view="overview"><i class="bi bi-grid-1x2"></i>Overview</button><button class="sidebar-link" data-admin-view="companies"><i class="bi bi-buildings"></i>Companies</button></nav></div><div class="sidebar-footer"><div class="admin-identity"><span class="admin-avatar">SA</span><div><strong>Super Admin</strong><small>Platform owner</small></div></div><button class="sidebar-link text-danger" onclick="logout()"><i class="bi bi-box-arrow-right"></i>Sign out</button></div></aside><main class="main-content"><header class="app-topbar"><button class="btn btn-ghost mobile-menu-btn" onclick="document.querySelector('.sidebar').classList.toggle('open')"><i class="bi bi-list"></i></button><div class="topbar-spacer"></div><span class="live-pill"><i class="bi bi-circle-fill"></i>Platform online</span><button class="icon-button" onclick="fetchAdminData()" title="Refresh data"><i class="bi bi-arrow-clockwise"></i></button></header><div id="admin-content"></div></main></div>`;
+    root.innerHTML = `<div class="app-layout admin-layout"><div class="sidebar-overlay" onclick="closeSidebar()"></div><aside class="sidebar"><div class="sidebar-brand"><span class="sidebar-brand-icon"><i class="bi bi-shield-lock"></i></span><div><h5>Nexus Control</h5><small>Platform administrator</small></div></div><div class="sidebar-section"><p class="sidebar-section-title">Platform</p><nav class="sidebar-nav"><button class="sidebar-link active" data-admin-view="overview"><i class="bi bi-grid-1x2"></i>Overview</button><button class="sidebar-link" data-admin-view="companies"><i class="bi bi-buildings"></i>Companies</button></nav></div><div class="sidebar-footer"><div class="admin-identity"><span class="admin-avatar">SA</span><div><strong>Super Admin</strong><small>Platform owner</small></div></div><button class="sidebar-link text-danger" onclick="logout()"><i class="bi bi-box-arrow-right"></i>Sign out</button></div></aside><main class="main-content"><header class="app-topbar"><button class="btn btn-ghost mobile-menu-btn" onclick="toggleSidebar()"><i class="bi bi-list"></i></button><div class="topbar-spacer"></div><span class="live-pill"><i class="bi bi-circle-fill"></i>Platform online</span><button class="icon-button" onclick="fetchAdminData()" title="Refresh data"><i class="bi bi-arrow-clockwise"></i></button></header><div id="admin-content"></div></main></div>`;
     root.querySelectorAll('[data-admin-view]').forEach(button => button.addEventListener('click', () => { root.querySelectorAll('[data-admin-view]').forEach(item => item.classList.remove('active')); button.classList.add('active'); renderAdminView(button.dataset.adminView); }));
     fetchAdminData();
 }

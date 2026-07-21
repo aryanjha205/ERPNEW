@@ -26,8 +26,8 @@ router = APIRouter()
 def _cid(user: dict) -> int:
     cid = user.get("company_id")
     if not cid:
-        return 1
-    return cid
+        raise HTTPException(status_code=403, detail="Company context required")
+    return int(cid)
 
 def _gen_order_number(prefix: str = "SO") -> str:
     return f"{prefix}-{''.join(random.choices(string.digits, k=8))}"

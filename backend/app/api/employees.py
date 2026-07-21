@@ -8,6 +8,7 @@ from app.db.database import get_db
 from app.models.company import Company
 from app.models.employee import Employee
 from app.core.security import get_password_hash, verify_password, create_access_token, validate_password
+from app.core.audit import record_audit_event
 
 router = APIRouter()
 
@@ -41,7 +42,7 @@ def register_employee(data: EmployeeRegister, db: Session = Depends(get_db)):
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     # Validate Company Code
     company = db.query(Company).filter(
-        Company.company_code == data.company_code,
+        Company.company_code == data.company_code.strip().upper(),
         Company.is_active == True
     ).first()
     if not company:
@@ -66,6 +67,15 @@ def register_employee(data: EmployeeRegister, db: Session = Depends(get_db)):
     db.add(employee)
     db.commit()
     db.refresh(employee)
+    record_audit_event(
+        db,
+        action="employee_registered",
+        resource="employee",
+        details=f"Employee {employee.employee_name} registered for workspace {company.company_name}.",
+        company_id=company.id,
+        user_subject=f"employee:{employee.id}",
+    )
+    db.commit()
 
     return {"message": "Employee registered successfully", "employee_id": employee.id}
 

@@ -1,9 +1,12 @@
-const CACHE_NAME = 'erp-cache-v5';
+const CACHE_NAME = 'erp-cache-v6';
 const urlsToCache = [
   '/',
+  '/index.html',
+  '/offline.html',
   '/manifest.json',
   '/src/css/style.css',
-  '/src/js/app.js'
+  '/src/js/app.js',
+  '/assets/icon.svg'
 ];
 
 self.addEventListener('install', event => {
@@ -39,6 +42,6 @@ self.addEventListener('fetch', event => {
         }
         return networkResponse;
       })
-      .catch(() => caches.match(event.request))
+      .catch(() => caches.match(event.request).then(match => match || caches.match('/offline.html')))
   );
 });

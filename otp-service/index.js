@@ -15,7 +15,7 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-app.post('/send-otp', async (req, res) => {
+async function sendOtpMail(req, res) {
     const { email, otp } = req.body;
     if (!email || !otp) {
         return res.status(400).json({ error: 'Email and OTP are required' });
@@ -35,6 +35,14 @@ app.post('/send-otp', async (req, res) => {
         console.error('Error sending email:', error);
         res.status(500).json({ success: false, error: 'Failed to send OTP' });
     }
+}
+
+app.post('/send-otp', sendOtpMail);
+
+app.post('/api/otp/send-otp', sendOtpMail);
+
+app.get('/health', (_req, res) => {
+    res.json({ ok: true });
 });
 
 const PORT = process.env.PORT || 3000;

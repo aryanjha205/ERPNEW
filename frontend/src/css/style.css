@@ -35,7 +35,7 @@
     --radius-xl: 16px;
     --sidebar-w: 260px;
     --topbar-h: 0px;
-    --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     --transition: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -80,7 +80,10 @@
 
 body {
     font-family: var(--font);
-    background: var(--bg);
+    background:
+        radial-gradient(circle at top left, rgba(99,102,241,0.08), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(16,185,129,0.06), transparent 24%),
+        var(--bg);
     color: var(--text);
     margin: 0;
     padding: 0;
@@ -103,6 +106,43 @@ body {
     padding: 1rem;
     position: relative;
 }
+
+.boot-screen {
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 1.25rem;
+    background:
+        radial-gradient(circle at top left, rgba(99,102,241,0.18), transparent 30%),
+        radial-gradient(circle at bottom right, rgba(16,185,129,0.14), transparent 28%),
+        var(--bg);
+}
+
+.boot-card {
+    width: min(360px, 100%);
+    padding: 2rem;
+    border-radius: 24px;
+    border: 1px solid var(--border);
+    background: color-mix(in srgb, var(--surface) 92%, white 8%);
+    box-shadow: var(--shadow-xl);
+    text-align: center;
+}
+
+.boot-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: .8rem;
+    margin: 0 auto;
+}
+
+.boot-brand strong,
+.boot-brand span {
+    display: block;
+    text-align: left;
+}
+
+.boot-brand strong { font-size: 1.05rem; color: var(--text); }
+.boot-brand span { font-size: .78rem; color: var(--text-muted); }
 
 .auth-container {
     width: 100%;
@@ -237,7 +277,8 @@ body {
     flex-direction: column;
     padding: 1.25rem 0.75rem;
     overflow-y: auto;
-    transition: transform 0.3s ease;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    backdrop-filter: blur(18px);
 }
 
 .sidebar-brand {
@@ -311,7 +352,7 @@ body {
     margin-left: var(--sidebar-w);
     flex: 1;
     min-height: 100vh;
-    padding: 1.5rem 2rem;
+    padding: 1.5rem 2rem 2rem;
 }
 
 .page-header {
@@ -338,6 +379,10 @@ body {
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-xs);
     transition: var(--transition);
+}
+
+.card:hover {
+    box-shadow: var(--shadow-md);
 }
 
 .stat-card {
@@ -593,6 +638,35 @@ body {
 }
 .sidebar-overlay.show { display: block; }
 
+.install-banner {
+    position: fixed;
+    left: 1rem;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 1090;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: .9rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    background: color-mix(in srgb, var(--surface) 88%, white 12%);
+    box-shadow: var(--shadow-xl);
+}
+
+.install-banner div { display: grid; gap: .1rem; }
+.install-banner strong { color: var(--text); font-size: .9rem; }
+.install-banner span { color: var(--text-muted); font-size: .78rem; }
+
+body.is-offline .live-pill { color: var(--warning); }
+body.is-offline .live-pill i { color: var(--warning); }
+
+body.is-offline .icon-button,
+body.is-offline .btn-primary {
+    filter: saturate(0.9);
+}
+
 /* ─── Scrollbar ─── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -804,7 +878,29 @@ body {
     }
 }
 
+    .app-topbar { position: sticky; top: 0; z-index: 150; padding: .45rem 0 .85rem; backdrop-filter: blur(14px); }
 @media (max-width: 767px) { .auth-wrapper { padding: 0; align-items: stretch; }.auth-shell { min-height: 100vh; border: 0; border-radius: 0; grid-template-columns: 1fr; }.auth-aside { display: none; }.auth-container { padding: 2rem 1.35rem; }.auth-mobile-brand { display: flex; }.directory-toolbar { align-items: stretch; flex-direction: column; }.directory-toolbar > span { display: none; }.admin-header { align-items: flex-start; }.admin-header .btn { width: 100%; }.admin-table { min-width: 760px; } }
+
+@media (max-width: 767px) {
+    .auth-shell {
+        box-shadow: none;
+    }
+    .toast-container {
+        right: .75rem;
+        left: .75rem;
+    }
+    .toast-msg {
+        min-width: unset;
+        width: 100%;
+    }
+    .install-banner {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .install-banner button {
+        width: 100%;
+    }
+}
 
 /* ─── Attendance Punch Card ─── */
 .attendance-punch-card {
@@ -837,6 +933,35 @@ body {
     border-radius: 999px;
 }
 .bg-orange { background: #f97316 !important; color: #fff; }
+
+/* Premium workspace polish */
+.app-layout { position: relative; }
+.main-content > #workspace-content,
+.main-content > #admin-content {
+    animation: fadeUp .35s ease-out;
+}
+
+.stat-card, .admin-stat, .card {
+    overflow: hidden;
+}
+
+.stat-card::before,
+.card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255,255,255,.08), transparent 20%);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity .2s ease;
+}
+
+.card, .stat-card { position: relative; }
+.card:hover::before,
+.stat-card:hover::before { opacity: 1; }
+
+.table-responsive { border-radius: inherit; }
+.form-control, .form-select, .btn, .badge, .toast-msg { backdrop-filter: blur(10px); }
 
 /* ─── Table Enhancements ─── */
 .table thead th {

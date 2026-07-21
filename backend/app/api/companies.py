@@ -1,6 +1,7 @@
 import random
 import string
 import datetime
+from typing import Any
 import requests
 import qrcode
 import base64
@@ -16,18 +17,33 @@ from app.schemas.company import CompanyRequestOTP, CompanyRegister, CompanyCreat
 from app.core.config import settings
 from app.core.security import get_password_hash, hash_otp, validate_password
 from app.core.deps import require_super_admin
+from app.core.audit import record_audit_event
+from app.core.templates import get_company_type_config
 from app.models.employee import Employee
 
 router = APIRouter()
+
+_otp_state: dict[str, dict[str, Any]] = {}
 
 
 def otp_service_url(request: Request) -> str:
     """Use an explicit local URL when configured, otherwise call this Vercel deployment."""
     if settings.OTP_SERVICE_URL:
-        return settings.OTP_SERVICE_URL
+        base = settings.OTP_SERVICE_URL.rstrip("/")
+        return base if base.endswith("/send-otp") else f"{base}/send-otp"
     scheme = request.headers.get("x-forwarded-proto", request.url.scheme)
     host = request.headers.get("x-forwarded-host", request.url.netloc)
     return f"{scheme}://{host}/api/otp/send-otp"
+
+
+def _otp_bucket(email: str) -> dict[str, Any]:
+    key = email.lower().strip()
+    bucket = _otp_state.setdefault(key, {"attempts": 0, "last_sent_at": None, "blocked_until": None})
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if bucket.get("blocked_until") and bucket["blocked_until"] <= now:
+        bucket["blocked_until"] = None
+        bucket["attempts"] = 0
+    return bucket
 
 def generate_company_code():
     chars = string.ascii_uppercase + string.digits
@@ -40,6 +56,18 @@ def request_otp(data: CompanyRequestOTP, request: Request, db: Session = Depends
     if existing_company:
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    bucket = _otp_bucket(data.email)
+    now = datetime.datetime.now(datetime.timezone.utc)
+    if bucket.get("blocked_until") and bucket["blocked_until"] > now:
+        retry_after = int((bucket["blocked_until"] - now).total_seconds())
+        raise HTTPException(status_code=429, detail=f"OTP request temporarily locked. Try again in {retry_after} seconds.")
+
+    if bucket.get("last_sent_at"):
+        elapsed = (now - bucket["last_sent_at"]).total_seconds()
+        if elapsed < settings.OTP_RESEND_COOLDOWN_SECONDS:
+            retry_after = settings.OTP_RESEND_COOLDOWN_SECONDS - int(elapsed)
+            raise HTTPException(status_code=429, detail=f"Please wait {retry_after} seconds before requesting another OTP.")
+
     # Generate 6 digit OTP
     otp_code = ''.join(random.choices(string.digits, k=6))
     
@@ -48,6 +76,9 @@ def request_otp(data: CompanyRequestOTP, request: Request, db: Session = Depends
     otp_record = OTPRequest(email=data.email, otp=hash_otp(data.email, otp_code), expires_at=expires)
     db.add(otp_record)
     db.commit()
+    bucket["last_sent_at"] = now
+    bucket["attempts"] = 0
+    _otp_state[data.email.lower().strip()] = bucket
 
     email_sent = False
     dev_otp = None
@@ -97,10 +128,21 @@ def request_otp(data: CompanyRequestOTP, request: Request, db: Session = Depends
         print(f"\n[DEV FALLBACK] Verification code for {data.email} is: {otp_code}\n")
         dev_otp = otp_code
 
+    record_audit_event(
+        db,
+        action="otp_requested",
+        resource="company_registration",
+        details="Verification OTP requested for workspace onboarding.",
+        user_subject=data.email,
+    )
+    db.commit()
+
     return {
         "message": "OTP processed successfully",
         "email_sent": email_sent,
-        "dev_otp": dev_otp
+        "dev_otp": dev_otp,
+        "cooldown_seconds": settings.OTP_RESEND_COOLDOWN_SECONDS,
+        "expires_in_seconds": 300,
     }
 
 def generate_qr_code_base64(code: str) -> str:
@@ -119,6 +161,11 @@ def register_company(data: CompanyRegister, db: Session = Depends(get_db)):
         validate_password(data.password)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    bucket = _otp_bucket(data.business_email)
+    if bucket.get("blocked_until") and bucket["blocked_until"] > datetime.datetime.now(datetime.timezone.utc):
+        raise HTTPException(status_code=429, detail="Too many invalid OTP attempts. Please request a new code later.")
+
     otp_record = db.query(OTPRequest).filter(
         OTPRequest.email == data.business_email,
         OTPRequest.otp == hash_otp(data.business_email, data.otp),
@@ -126,6 +173,10 @@ def register_company(data: CompanyRegister, db: Session = Depends(get_db)):
         OTPRequest.expires_at > datetime.datetime.now(datetime.timezone.utc),
     ).order_by(OTPRequest.created_at.desc()).first()
     if not otp_record:
+        bucket["attempts"] = int(bucket.get("attempts", 0)) + 1
+        if bucket["attempts"] >= settings.OTP_MAX_ATTEMPTS:
+            bucket["blocked_until"] = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=10)
+        _otp_state[data.business_email.lower().strip()] = bucket
         raise HTTPException(status_code=400, detail="Invalid or expired verification code")
     otp_record.is_used = True
     # Generate unique company code
@@ -148,6 +199,18 @@ def register_company(data: CompanyRegister, db: Session = Depends(get_db)):
     db.add(new_company)
     db.commit()
     db.refresh(new_company)
+    _otp_state.pop(data.business_email.lower().strip(), None)
+
+    template = get_company_type_config(data.company_type)
+    record_audit_event(
+        db,
+        action="company_registered",
+        resource="company",
+        details=f"Workspace created for {data.company_name}.",
+        company_id=new_company.id,
+        user_subject=data.business_email,
+    )
+    db.commit()
 
     qr_code_base64 = generate_qr_code_base64(code)
 
@@ -155,7 +218,8 @@ def register_company(data: CompanyRegister, db: Session = Depends(get_db)):
         "message": "Workspace created successfully",
         "status": "active",
         "company_code": code,
-        "qr_code_base64": qr_code_base64
+        "qr_code_base64": qr_code_base64,
+        "template": template,
     }
 
 
@@ -190,6 +254,15 @@ def create_company_as_super_admin(
     db.commit()
     
     qr_code_base64 = generate_qr_code_base64(code)
+    record_audit_event(
+        db,
+        action="company_created_by_super_admin",
+        resource="company",
+        details=f"Workspace created for {company.company_name}.",
+        company_id=company.id,
+        user_subject="super-admin",
+    )
+    db.commit()
     return {
         "message": "Workspace created",
         "company_code": code,
@@ -233,6 +306,14 @@ def set_company_status(
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
     company.is_active = is_active
+    record_audit_event(
+        db,
+        action="company_status_changed",
+        resource="company",
+        details=f"Workspace marked as {'active' if is_active else 'suspended' }.",
+        company_id=company.id,
+        user_subject="super-admin",
+    )
     db.commit()
     db.refresh(company)
     return company
@@ -258,5 +339,13 @@ def reset_company_password(
     if not company:
         raise HTTPException(status_code=404, detail="Company not found")
     company.password = get_password_hash(data.new_password)
+    record_audit_event(
+        db,
+        action="company_password_reset",
+        resource="company",
+        details="Company administrator password was reset by the platform administrator.",
+        company_id=company.id,
+        user_subject="super-admin",
+    )
     db.commit()
     return {"message": "Company password reset successfully"}

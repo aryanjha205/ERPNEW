@@ -6,6 +6,11 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    OTP_RESEND_COOLDOWN_SECONDS: int = 60
+    OTP_MAX_ATTEMPTS: int = 5
+    SUPER_ADMIN_LOCKOUT_SECONDS: int = 300
+    SUPER_ADMIN_MAX_ATTEMPTS: int = 5
     # Optional in hosted deployments: the API derives the same-site OTP route.
     OTP_SERVICE_URL: Optional[str] = None
     SUPER_ADMIN_PIN: str
