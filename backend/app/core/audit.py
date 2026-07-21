@@ -3,6 +3,12 @@ from sqlalchemy.orm import Session
 from app.models.erp import AuditLog
 
 
+def _clip(value: str | None, limit: int = 20) -> str | None:
+    if value is None:
+        return None
+    return value[:limit]
+
+
 def record_audit_event(
     db: Session,
     action: str,
@@ -16,8 +22,8 @@ def record_audit_event(
     entry = AuditLog(
         company_id=company_id,
         user_subject=user_subject,
-        action=action,
-        resource=resource,
+        action=_clip(action) or action,
+        resource=_clip(resource),
         details=details,
         ip_address=ip_address,
     )

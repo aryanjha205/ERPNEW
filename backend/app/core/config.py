@@ -1,5 +1,10 @@
 from typing import Optional
+from pathlib import Path
 from pydantic_settings import BaseSettings
+
+
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+REPO_ROOT = BACKEND_DIR.parent
 
 class Settings(BaseSettings):
     DATABASE_URL: str
@@ -22,6 +27,7 @@ class Settings(BaseSettings):
     OPENROUTER_MODEL: Optional[str] = "google/gemma-4-26b-a4b-it:free"
 
     class Config:
-        env_file = ".env"
+        env_file = (BACKEND_DIR / ".env", REPO_ROOT / ".env")
+        env_file_encoding = "utf-8"
 
 settings = Settings()
