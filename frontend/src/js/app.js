@@ -1091,7 +1091,7 @@ function renderReports(data) {
 }
 
 function exportCategoryCsv(category, rows) {
-    let csvContent = "data:text/csv;charset=utf-8," + "Metric,Value\n" + rows.map(e => e.join(",")).join("\n");
+    let csvContent = "data:text/csv;charset=utf-8," + "Metric,Value\\n" + rows.map(e => e.join(",")).join("\\n");
     const link = document.createElement("a");
     link.setAttribute("href", encodeURI(csvContent));
     link.setAttribute("download", `${category.toLowerCase()}_report.csv`);
@@ -1109,64 +1109,157 @@ function exportReportsCsv() {
 
 // ──────────── Dashboard ────────────
 function renderDashboard(data) {
+    const session = getSession();
+    const type = session?.companyType || 'Custom Business';
+    
+    // Grouping
+    const isHospitality = ['Hotel', 'Hospital', 'Restaurant'].includes(type);
+    const isRetail = ['Retail', 'Wholesale', 'Trading', 'Logistics', 'Warehouse'].includes(type);
+    const isProduction = ['Manufacturing', 'Chemical Industry', 'Pharmaceutical', 'Construction', 'Agriculture', 'Textile', 'Automobile', 'Electronics'].includes(type);
+    const isService = ['IT Company', 'Service Business', 'School', 'College'].includes(type);
+
+    let kpis = [];
+    let quickActions = [];
+    let chartColors = [];
+    let title = "Dashboard";
+
+    if (isHospitality) {
+        title = `${type} Operations`;
+        const customerLabel = type === 'Hospital' ? 'Patients Admitted' : (type === 'Hotel' ? 'Active Guests' : 'Daily Customers');
+        kpis = [
+            [customerLabel, data.total_customers, 'person-heart'],
+            ['Staff on Duty', data.total_employees, 'people'],
+            ['Pending Orders', data.pending_tasks, 'bell-fill'],
+            ['Revenue', data.revenue, 'currency-dollar']
+        ];
+        quickActions = [
+            ['Add ' + (type === 'Hospital' ? 'Patient' : 'Customer'), 'customers', 'person-plus'],
+            ['Assign Task', 'tasks', 'check2-square'],
+            ['Manage Inventory', 'inventory', 'box-seam']
+        ];
+        chartColors = ['rgba(236, 72, 153, 0.8)', 'rgba(168, 85, 247, 0.8)', 'rgba(59, 130, 246, 0.8)'];
+    } else if (isRetail) {
+        title = `${type} Command Center`;
+        kpis = [
+            ['Sales Revenue', data.revenue, 'cart-check'],
+            ['Inventory Count', data.total_inventory, 'exclamation-triangle'],
+            ['Pending Invoices', data.pending_invoices, 'receipt'],
+            ['Total Customers', data.total_customers, 'people']
+        ];
+        quickActions = [
+            ['New Sale', 'sales', 'cart-plus'],
+            ['Add Inventory', 'inventory', 'box-arrow-in-down'],
+            ['Create Invoice', 'invoices', 'receipt']
+        ];
+        chartColors = ['rgba(16, 185, 129, 0.8)', 'rgba(245, 158, 11, 0.8)', 'rgba(59, 130, 246, 0.8)'];
+    } else if (isProduction) {
+        title = `${type} Floor Overview`;
+        kpis = [
+            ['Active Projects', data.active_projects, 'kanban'],
+            ['Pending Tasks', data.pending_tasks, 'tools'],
+            ['Suppliers', data.total_suppliers, 'truck'],
+            ['Total Inventory', data.total_inventory, 'boxes']
+        ];
+        quickActions = [
+            ['New Project', 'projects', 'kanban-fill'],
+            ['Log Purchase', 'purchases', 'bag-plus'],
+            ['Update Inventory', 'inventory', 'box-seam']
+        ];
+        chartColors = ['rgba(249, 115, 22, 0.8)', 'rgba(234, 179, 8, 0.8)', 'rgba(14, 165, 233, 0.8)'];
+    } else if (isService) {
+        title = `${type} Workspace`;
+        const clientLabel = type === 'School' || type === 'College' ? 'Students' : 'Clients';
+        kpis = [
+            ['Active Projects', data.active_projects, 'briefcase'],
+            ['Open Tasks', data.pending_tasks, 'check2-all'],
+            [clientLabel, data.total_customers, 'person-vcard'],
+            ['Total Revenue', data.revenue, 'currency-dollar']
+        ];
+        quickActions = [
+            ['Add ' + clientLabel, 'customers', 'person-plus'],
+            ['Create Project', 'projects', 'folder-plus'],
+            ['Assign Task', 'tasks', 'list-task']
+        ];
+        chartColors = ['rgba(139, 92, 246, 0.8)', 'rgba(236, 72, 153, 0.8)', 'rgba(14, 165, 233, 0.8)'];
+    } else {
+        // Default (Custom Business)
+        title = "Business Overview";
+        kpis = [
+            ['Revenue', data.revenue, 'currency-dollar'],
+            ['Expenses', data.expenses, 'wallet2'],
+            ['Profit', data.profit, 'graph-up'],
+            ['Employees', data.total_employees, 'people'],
+            ['Customers', data.total_customers, 'person-heart'],
+            ['Inventory Items', data.total_inventory, 'boxes'],
+            ['Pending Invoices', data.pending_invoices, 'receipt'],
+            ['Open Tasks', data.pending_tasks, 'check2-square']
+        ];
+        quickActions = [
+            ['Add Customer', 'customers', 'person-plus'],
+            ['Manage Inventory', 'inventory', 'box-seam'],
+            ['Assign Tasks', 'tasks', 'check2-square'],
+            ['Attendance', 'attendance', 'calendar-check']
+        ];
+        chartColors = ['rgba(99, 102, 241, 0.8)', 'rgba(239, 68, 68, 0.8)', 'rgba(16, 185, 129, 0.8)'];
+    }
+
     document.getElementById('workspace-content').innerHTML = `
-        <div class="page-header">
+        <div class="page-header mb-4">
             <div>
-                <h2>Dashboard</h2>
-                <p class="text-muted mb-0">A real-time view of your business.</p>
+                <h2>${title}</h2>
+                <p class="text-muted mb-0">A real-time view tailored for ${type}.</p>
             </div>
         </div>
-        <div class="row g-3">
-            ${[
-                ['Revenue', data.revenue, 'currency-dollar'],
-                ['Expenses', data.expenses, 'wallet2'],
-                ['Profit', data.profit, 'graph-up'],
-                ['Employees', data.total_employees, 'people'],
-                ['Customers', data.total_customers, 'person-heart'],
-                ['Inventory Items', data.total_inventory, 'boxes'],
-                ['Pending Invoices', data.pending_invoices, 'receipt'],
-                ['Open Tasks', data.pending_tasks, 'check2-square']
-            ].map(([label, value, icon]) => `
-                <div class="col-sm-6 col-xl-3">
-                    <div class="card stat-card h-100">
-                        <div class="card-body d-flex justify-content-between">
-                            <div>
-                                <h6>${label}</h6>
-                                <div class="stat-value">${typeof value === 'number' && ['Revenue', 'Expenses', 'Profit'].includes(label) ? fmtCurrency(value) : value}</div>
+        
+        <div class="row g-4 mb-4">
+            ${kpis.map(([label, value, icon], i) => `
+                <div class="col-sm-6 col-xl-${kpis.length <= 4 ? '3' : '3'}">
+                    <div class="card stat-card h-100 shadow-sm border-0" style="background: linear-gradient(145deg, #ffffff, #f8fafc); border-radius: 16px;">
+                        <div class="card-body d-flex flex-column justify-content-between p-4">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <h6 class="text-muted fw-semibold mb-0" style="font-size: 0.9rem;">${label}</h6>
+                                <div class="stat-icon d-flex align-items-center justify-content-center rounded-circle" style="width: 40px; height: 40px; background-color: ${chartColors[i % chartColors.length].replace('0.8', '0.1')}; color: ${chartColors[i % chartColors.length].replace(', 0.8)', ')')};">
+                                    <i class="bi bi-${icon} fs-5"></i>
+                                </div>
                             </div>
-                            <div class="stat-icon bg-primary-subtle text-primary">
-                                <i class="bi bi-${icon}"></i>
-                            </div>
+                            <h3 class="fw-bold mb-0 text-dark">${typeof value === 'number' && (label.includes('Revenue') || label.includes('Expenses') || label.includes('Profit') || label.includes('Sales')) ? fmtCurrency(value) : value}</h3>
                         </div>
                     </div>
                 </div>
             `).join('')}
         </div>
         
-        <div class="row g-3 mt-3">
-            <div class="col-md-6">
-                <div class="card p-3">
-                    <h5>Monthly Overview</h5>
-                    <canvas id="overviewChart"></canvas>
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <div class="card p-4 shadow-sm border-0 h-100" style="border-radius: 16px;">
+                    <h5 class="fw-bold mb-4">Financial Performance</h5>
+                    <div style="position: relative; height: 300px;">
+                        <canvas id="overviewChart"></canvas>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-6">
-                <div class="card p-3">
-                    <h5>Quick Actions</h5>
-                    <div class="d-grid gap-2">
-                        <button class="btn btn-primary text-start" onclick="loadModule('customers')"><i class="bi bi-person-plus me-2"></i>Add Customer</button>
-                        <button class="btn btn-outline-primary text-start" onclick="loadModule('inventory')"><i class="bi bi-box-seam me-2"></i>Manage Inventory</button>
-                        <button class="btn btn-outline-secondary text-start" onclick="loadModule('tasks')"><i class="bi bi-check2-square me-2"></i>Assign Tasks</button>
-                        <button class="btn btn-outline-info text-start" onclick="loadModule('attendance')"><i class="bi bi-calendar-check me-2"></i>Attendance</button>
+            <div class="col-lg-4">
+                <div class="card p-4 shadow-sm border-0 h-100" style="border-radius: 16px;">
+                    <h5 class="fw-bold mb-4">Quick Actions</h5>
+                    <div class="d-flex flex-column gap-3">
+                        ${quickActions.map(([label, module, icon], i) => `
+                            <button class="btn btn-light text-start py-3 px-4 fw-semibold border rounded-3 d-flex align-items-center" onclick="loadModule('${module}')" style="transition: all 0.2s;">
+                                <i class="bi bi-${icon} fs-5 me-3" style="color: ${chartColors[i % chartColors.length].replace(', 0.8)', ')')};"></i>
+                                ${label}
+                            </button>
+                        `).join('')}
                     </div>
                 </div>
             </div>
         </div>
         
-        <div class="card mt-4">
-            <div class="card-body">
-                <h5 class="mb-1">AI Assistant is active</h5>
-                <p class="text-muted mb-0">Click the floating microphone button to speak commands like: "show inventory", "check in", "open crm", "today's attendance", etc.</p>
+        <div class="card mt-4 border-0 shadow-sm" style="border-radius: 16px; background: linear-gradient(135deg, #fdf4ff, #eef2ff);">
+            <div class="card-body p-4 d-flex align-items-center">
+                <div class="fs-1 me-4">✨</div>
+                <div>
+                    <h5 class="fw-bold mb-1">AI Assistant is active</h5>
+                    <p class="text-muted mb-0">Click the floating microphone button to speak commands like: "show inventory", "check in", "open crm", "today's attendance", etc.</p>
+                </div>
             </div>
         </div>`;
         
@@ -1177,15 +1270,28 @@ function renderDashboard(data) {
             data: {
                 labels: ['Revenue', 'Expenses', 'Profit'],
                 datasets: [{
-                    label: 'Financial Performance (₹)',
+                    label: 'Amount (₹)',
                     data: [data.revenue, data.expenses, data.profit],
-                    backgroundColor: ['rgba(99, 102, 241, 0.8)', 'rgba(239, 68, 68, 0.8)', 'rgba(16, 185, 129, 0.8)']
+                    backgroundColor: [chartColors[0], chartColors[1], chartColors[2]],
+                    borderRadius: 6,
+                    borderSkipped: false,
                 }]
             },
-            options: { responsive: true, scales: { y: { beginAtZero: true } } }
+            options: { 
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false }
+                },
+                scales: { 
+                    y: { beginAtZero: true, grid: { borderDash: [4, 4] } },
+                    x: { grid: { display: false } }
+                } 
+            }
         });
     }
 }
+
 
 // ──────────── Settings ────────────
 function renderSettings(data) {
